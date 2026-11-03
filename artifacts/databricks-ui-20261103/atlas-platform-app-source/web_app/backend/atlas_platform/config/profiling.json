@@ -1,0 +1,7 @@
+{
+  "schema_version": "1.0",
+  "attributes_per_query": 50,
+  "max_parallel_queries": 4,
+  "statement_timeout_seconds": 300,
+  "max_attributes_per_object": 2000
+}

@@ -1,0 +1,154 @@
+"""Common, bounded Workflow Run read contracts."""
+
+from datetime import datetime
+from decimal import Decimal
+from typing import Literal
+from uuid import UUID
+
+from atlas_mcp.domain.errors import AtlasError
+from pydantic import BaseModel, ConfigDict, Field
+
+from atlas_platform.capabilities import MAX_AGENT_TURNS, MAX_VALIDATION_RETRIES
+from atlas_platform.features.workflows.usage.read_service import WorkflowTokenUsageSummary
+
+type ProjectWorkflow = Literal[
+    "profiling",
+    "analysis",
+    "subject_area",
+    "logical",
+    "dimensional",
+    "mapping",
+    "code_generation",
+    "validation",
+    "metadata_enrichment",
+]
+type ExecutionMode = Literal["one_shot", "tool_assisted"]
+type ModeledEntityType = Literal["logical_entity", "dimensional_entity"]
+type RunState = Literal[
+    "queued",
+    "running",
+    "completed",
+    "completed_with_repair",
+    "failed",
+    "cancelled",
+]
+type ProjectChangeSetStatus = Literal[
+    "active",
+    "validated",
+    "applied",
+    "expired",
+    "discarded",
+    "superseded",
+]
+type EventStatus = Literal[
+    "started",
+    "running",
+    "completed",
+    "warning",
+    "failed",
+    "blocked",
+]
+
+
+class MappingRunOutcome(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    completed_pair_count: int = Field(ge=0)
+    preserved_pair_count: int = Field(ge=0)
+    no_source_pair_count: int = Field(ge=0)
+    failed_pair_count: int = Field(ge=0)
+    partial_pair_count: int = Field(default=0, ge=0)
+    empty_pair_count: int = Field(default=0, ge=0)
+
+
+class MappingPairFailure(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source_system_id: int = Field(gt=0)
+    system_code: str = Field(min_length=1, max_length=100)
+    modeled_entity_id: int = Field(gt=0)
+    entity_schema_name: str = Field(min_length=1, max_length=400)
+    entity_name: str = Field(min_length=1, max_length=255)
+    message: str = Field(min_length=1, max_length=2000)
+
+
+class WorkflowRunLedgerRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    workflow_run_id: int = Field(gt=0)
+    project_workflow: ProjectWorkflow
+    workflow_execution_mode: ExecutionMode | None = None
+    # Logical and Dimensional runs Build Subject Areas or Optimize the whole model;
+    # per_table Analysis runs make one call per selected table.
+    workflow_operation: Literal["build", "optimize", "per_table"] | None = None
+    modeled_entity_type: ModeledEntityType | None = None
+    selected_scope_count: int = Field(gt=0)
+    requested_batch_id: str | None = Field(default=None, max_length=500)
+    workflow_run_state: RunState
+    actor_display_name: str = Field(min_length=1, max_length=255)
+    created_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    mapping_outcome: MappingRunOutcome | None = None
+
+
+class WorkflowRunDetail(WorkflowRunLedgerRecord):
+    correlation_id: UUID
+    mapping_failures: tuple[MappingPairFailure, ...] = Field(default=(), max_length=200)
+    mapping_failures_truncated: bool = False
+    token_usage: WorkflowTokenUsageSummary = Field(default_factory=WorkflowTokenUsageSummary)
+    agent_sdk_code: str | None = Field(default=None, max_length=100)
+    agent_provider_code: str | None = Field(default=None, max_length=100)
+    agent_model_code: str | None = Field(default=None, max_length=200)
+    reasoning_effort_code: str | None = Field(default=None, max_length=50)
+    max_turns: int | None = Field(default=None, ge=1, le=MAX_AGENT_TURNS)
+    validation_retry_count: int | None = Field(default=None, ge=0, le=MAX_VALIDATION_RETRIES)
+    failure_code: str | None = Field(default=None, max_length=100)
+    failure_message: str | None = Field(default=None, max_length=2000)
+    project_change_set_id: UUID | None = None
+    project_change_set_status: ProjectChangeSetStatus | None = None
+    draft_revision: int | None = Field(default=None, gt=0)
+    candidate_digest: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    validated_at: datetime | None = None
+    execution_status: Literal["waiting_for_worker", "executing"] | None = None
+    model_request_started_at: datetime | None = None
+
+
+class WorkflowRunCollection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    items: tuple[WorkflowRunLedgerRecord, ...] = Field(max_length=200)
+    next_cursor: str | None = Field(default=None, max_length=2048)
+
+
+class RunEventRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    sequence: int = Field(gt=0)
+    attempt: int = Field(gt=0)
+    stage: str = Field(min_length=1, max_length=100)
+    status: EventStatus
+    message: str = Field(min_length=1, max_length=2000)
+    current: int | None = Field(default=None, ge=0)
+    total: int | None = Field(default=None, ge=0)
+    percent: Decimal | None = Field(default=None, ge=0, le=100)
+    finding_count: int = Field(ge=0)
+    created_at: datetime
+
+
+class RunEventCollection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    items: tuple[RunEventRecord, ...] = Field(max_length=200)
+    next_after_sequence: int = Field(ge=0)
+
+
+class WorkflowRunNotFoundError(AtlasError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="workflow_run_not_found",
+            message="The requested workflow run was not found.",
+        )

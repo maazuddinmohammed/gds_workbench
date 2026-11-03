@@ -1,0 +1,61 @@
+"""Authorized Metadata catalog feature."""
+
+from atlas_platform.features.metadata.contracts import (
+    FOUNDATIONAL_DATASETS,
+    MAX_METADATA_EXPORT_ROWS,
+    MAX_METADATA_EXPORT_ROWS_PER_SHEET,
+    METADATA_DATASETS,
+    OPERATIONAL_DATASETS,
+    REFERENCE_DATASETS,
+    MetadataDatabase,
+    MetadataDataset,
+    MetadataDatasetDescription,
+    MetadataDatasetRegistry,
+    MetadataFilter,
+    MetadataObjectNotFoundError,
+    MetadataRepository,
+    MetadataRowPage,
+    MetadataService,
+    MetadataWorkbookDownload,
+    ObjectAttribute,
+    ObjectCatalogDetail,
+    ObjectCatalogFilters,
+    ObjectCatalogPage,
+    ObjectCatalogSummary,
+    OperationalDataset,
+)
+from atlas_platform.features.metadata.repository import PostgresMetadataRepository
+from atlas_platform.features.metadata.router import create_metadata_router
+from atlas_platform.features.metadata.service import (
+    DatabaseMetadataService,
+    metadata_dataset_registry,
+)
+
+__all__ = [
+    "DatabaseMetadataService",
+    "FOUNDATIONAL_DATASETS",
+    "MAX_METADATA_EXPORT_ROWS",
+    "MAX_METADATA_EXPORT_ROWS_PER_SHEET",
+    "METADATA_DATASETS",
+    "OPERATIONAL_DATASETS",
+    "ObjectAttribute",
+    "ObjectCatalogDetail",
+    "ObjectCatalogFilters",
+    "ObjectCatalogPage",
+    "ObjectCatalogSummary",
+    "OperationalDataset",
+    "PostgresMetadataRepository",
+    "REFERENCE_DATASETS",
+    "MetadataDatabase",
+    "MetadataDataset",
+    "MetadataDatasetDescription",
+    "MetadataDatasetRegistry",
+    "MetadataFilter",
+    "MetadataObjectNotFoundError",
+    "MetadataRepository",
+    "MetadataRowPage",
+    "MetadataService",
+    "MetadataWorkbookDownload",
+    "create_metadata_router",
+    "metadata_dataset_registry",
+]

@@ -46,6 +46,21 @@ class Connection:
                     "privileges_ready": True,
                     "workflow_guard_ready": True,
                     "application_reference_ready": True,
+                    "active_stage_variables": [
+                        [
+                            "validation",
+                            None,
+                            "validation_generation",
+                            {
+                                "system_ref": "text",
+                                "system_scope": "json",
+                                "mapping_evidence": "json",
+                                "current_code": "json",
+                                "applied_groups": "json",
+                                "applied_checks": "json",
+                            },
+                        ]
+                    ],
                 }
             )
         return Result()
@@ -140,7 +155,7 @@ async def test_readiness_checks_the_web_schema_and_role(
     assert "uq_workflow_run_running_tenant" in readiness_sql
     assert "fk_workflow_run_project" in readiness_sql
     assert "count(*) = 31" in readiness_sql
-    assert "count(*) = 271" in readiness_sql
+    assert "workflow_stage_variable_resolver_key" in readiness_sql
     assert "pg_auth_members" in readiness_sql
     assert "mcp.project_change_set" in readiness_sql
     assert "workflow.subject_area" in readiness_sql

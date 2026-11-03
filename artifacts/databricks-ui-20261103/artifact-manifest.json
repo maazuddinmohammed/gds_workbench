@@ -1,0 +1,2575 @@
+{
+  "agent_provider": "microsoft_foundry",
+  "app_source": [
+    {
+      "path": "DEPLOYMENT_GUIDE.md",
+      "sha256": "8e035cece0ad0caff7fbf44c35cd40d06d84423cfec71d63ba5e8fe4661e8514",
+      "size": 16837
+    },
+    {
+      "path": "app.yaml",
+      "sha256": "2c7315d853f829c9f5ab1c83f77f47a33bd315dec5c0f80689bbee6a42b2145d",
+      "size": 857
+    },
+    {
+      "path": "mcp_server/atlas_mcp/__init__.py",
+      "sha256": "35db2efd9e47016d697ab664d607e5eb03fd5f92c6121c99921f4e3fd445c38e",
+      "size": 102
+    },
+    {
+      "path": "mcp_server/atlas_mcp/adapters/__init__.py",
+      "sha256": "f07e3a006719560ab0f4d0dfa9c5a77d24b9503a9c466cad6bc5e16b4e9d3af9",
+      "size": 48
+    },
+    {
+      "path": "mcp_server/atlas_mcp/adapters/auth/__init__.py",
+      "sha256": "b529e88d1462c301f0f49d15e70eeb74881c457ce13b5dec0526cc96902c7967",
+      "size": 31
+    },
+    {
+      "path": "mcp_server/atlas_mcp/adapters/auth/identity.py",
+      "sha256": "f64b9292cf510b5ceebf0fe50a40dfabe99232ef431b6d8846efe68d639391ce",
+      "size": 7101
+    },
+    {
+      "path": "mcp_server/atlas_mcp/adapters/auth/middleware.py",
+      "sha256": "f9484febf699ad237f77873b9965776a11b647def6dd390f167c8e6cc4f6c0c4",
+      "size": 2308
+    },
+    {
+      "path": "mcp_server/atlas_mcp/adapters/mcp/__init__.py",
+      "sha256": "e07c0ae1063a940caf7cceccedfbe173e478cacd14a1cefd378b1c194f2d6b02",
+      "size": 29
+    },
+    {
+      "path": "mcp_server/atlas_mcp/adapters/mcp/annotations.py",
+      "sha256": "294f1f6f41aa219ef764719bb51154de0583ae23b5a3dde7cc5e60cf2ce5669b",
+      "size": 457
+    },
+    {
+      "path": "mcp_server/atlas_mcp/adapters/mcp/atlas_bridge_gate.py",
+      "sha256": "179556840dd24faa02ecc26a4be24c036646143683481e95c1d50108e226c7be",
+      "size": 3511
+    },
+    {
+      "path": "mcp_server/atlas_mcp/adapters/mcp/server.py",
+      "sha256": "0997ec3edcce2a80c5af89dcfbb6183c41c665ca21f57ba56577858b3ff4a410",
+      "size": 12198
+    },
+    {
+      "path": "mcp_server/atlas_mcp/adapters/mcp/tool_audit.py",
+      "sha256": "74ba18da49ae5f728839266d01b61036971af009d3a584b4110b07f213654879",
+      "size": 7770
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/__init__.py",
+      "sha256": "7001c28b30eb15d8e9f9608ed87a44eb3629235f92b37a48f9709c1a160725da",
+      "size": 49
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/authorization.py",
+      "sha256": "331f8cd9bda9f407f4a31c5851130cb6ef846e18e405054b53ba2f2b07b3f3e6",
+      "size": 10103
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/change_sets/__init__.py",
+      "sha256": "984695ff26cf5044dc0eaccbb3371748a861e66cdf38881011b424a0ae583d36",
+      "size": 53
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/change_sets/action_review.py",
+      "sha256": "9a1aee85ef07b195da5314a97afd929bcb633e700de0681d6619f6c47c2aff06",
+      "size": 1903
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/change_sets/contracts.py",
+      "sha256": "ccfb0cdd334f8d555b84eba4d36512a3d649696e41c064ad42e08f7b7722d39e",
+      "size": 9182
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/change_sets/metadata.py",
+      "sha256": "9c19c078041fa48888daf729830ad3f99cfe58baac873650565d6c0b5b88f894",
+      "size": 21220
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/change_sets/metadata_validation.py",
+      "sha256": "d54dd4ea861668ba1d6f006093598b1b8248f627713f4cff6b1299bccba396fd",
+      "size": 22753
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/change_sets/project.py",
+      "sha256": "1b37ff5d751e6b525bcc2346a2fe88ea5518fc8effd73322be93f60f6039003d",
+      "size": 24208
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/change_sets/project_apply.py",
+      "sha256": "c1bc92f7ee915c8814dfd831f2690ead0963cd21c49c225cba3d70deb9be3d1b",
+      "size": 95538
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/change_sets/project_validation.py",
+      "sha256": "89059b2b00ad1ce180b91d975ab0274212912f31996fb08af32f09eefcca9824",
+      "size": 61494
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/cursor.py",
+      "sha256": "f53b2d2c842bc1ca6ec12ecf0807bfbeff208ae1eebab9c02e98746a090acbc9",
+      "size": 2767
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/identity.py",
+      "sha256": "2e7fbfed6ce4eacdf7fd5b34e2499cef81578d6fbfa659ba7d70a651ad71f5a4",
+      "size": 419
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/mapping_context.py",
+      "sha256": "15baa6463f0f1e7aea5723769956a85f0e2006abf25fe161bf2ee1caf5f615a1",
+      "size": 18257
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/metadata_snapshot/__init__.py",
+      "sha256": "2b538f5956e5f5f95190cba6268082a1ef49dcadeed499c584e2bb2e5e9ab06d",
+      "size": 77
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/metadata_snapshot/archive.py",
+      "sha256": "26ff4379f979f36725ec43af99baaf79fcf1b77ceb5f96c186b4dd735008d391",
+      "size": 21423
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/metadata_snapshot/projection.py",
+      "sha256": "7154e466d8ba4adedc8e57cd5abbd47c32e0e34f99afafa30dfe3c8286017e06",
+      "size": 16715
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/metadata_snapshot/selection.py",
+      "sha256": "ad83952d48b1125bd0a455d944094d614e7f2a45bfd75146e80311d67b5f471c",
+      "size": 15406
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/metadata_snapshot/sql.py",
+      "sha256": "461586a3cb541076015f2bcb65c268e9a3194c5aedb9c84486c3c503b132b6a4",
+      "size": 9881
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/modeling/__init__.py",
+      "sha256": "2cdb0a31ffc051762bb3f5bc92b98a1c389f35b9e4e5f6fd1a4b7ba794a6669a",
+      "size": 64
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/modeling/context.py",
+      "sha256": "b2d18b8afc0321a48191ccd2a8e0a4afe4c1828ea2534c64747f054e0b7eb570",
+      "size": 1937
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/modeling/enrichment.py",
+      "sha256": "04fe3a8ec1365006f1d9c6e100f48211c56259dca89ab2e155564044e38245af",
+      "size": 3219
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/modeling/modeled_layer.py",
+      "sha256": "6939f1cbac68443e6cbcfc53714edc2d54abd10f607681b58b95b89cc6148fbb",
+      "size": 24404
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/modeling/profiling_analysis.py",
+      "sha256": "d719b800fb54bff350f2d1ab1f1be14585f5a7e920f6eef9156725c338456bc7",
+      "size": 6985
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/modeling/subject_area.py",
+      "sha256": "16d2fb0ee81b87390200fdcd9cbfd685cca82fff7605d4d34b0aa5f1d7e087f4",
+      "size": 3133
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/profiling/__init__.py",
+      "sha256": "f7273e686698f9eff988193ad70b708b662bcf724a2f058cb77327f8e216adef",
+      "size": 72
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/profiling/execution.py",
+      "sha256": "1a2b1c4526fd672a1dc297c3f6808e69981b7294d9773f68a2aeb68c8cba7215",
+      "size": 23113
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/profiling/profiling.json",
+      "sha256": "3feb817c4426b8af9fe19f0f9aaa057ad25d90d3d496edfd402c673542b6ec83",
+      "size": 162
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/profiling/service.py",
+      "sha256": "8206769e6b78ca9ef6ddf93db8113eef68f2d6ef0192c8f1718dd988a56fd262",
+      "size": 11138
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/project_read.py",
+      "sha256": "44772c16acc8903c6ce44a5716f311e5d7cccfd2e8ae6c43bf1c0ab516438416",
+      "size": 3979
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/project_snapshot.py",
+      "sha256": "7fe8abc6cbe44e37a1f2d191c3e8b5231a537958e5d354cbea46a0b3d7a5cd7b",
+      "size": 24136
+    },
+    {
+      "path": "mcp_server/atlas_mcp/application/tenants.py",
+      "sha256": "c85f4810ea1cb727df0c2ed4289ec0bac182c3fed6ba39330cb5719fec5d180b",
+      "size": 3528
+    },
+    {
+      "path": "mcp_server/atlas_mcp/configuration.py",
+      "sha256": "e214a1794ea4a3829d24ea649052f3d93d28ebedd95d471d751c9fc32e190c40",
+      "size": 12524
+    },
+    {
+      "path": "mcp_server/atlas_mcp/diagnostics/__init__.py",
+      "sha256": "560ba1cac3c90e4d5ec93e2c4e4db0e8c9ee15c4b12cf34e2df06ed9a547b9a1",
+      "size": 37
+    },
+    {
+      "path": "mcp_server/atlas_mcp/diagnostics/metadata_snapshot.py",
+      "sha256": "e1f576d0c7832e02eba9c1d98e770613c0c34788eacf160ff4a9ee9bb01cd38a",
+      "size": 33851
+    },
+    {
+      "path": "mcp_server/atlas_mcp/domain/__init__.py",
+      "sha256": "555b4cadd963d5e202096c42fbafac67af56fe83136f57d15e951ad2c01a46a2",
+      "size": 43
+    },
+    {
+      "path": "mcp_server/atlas_mcp/domain/authorization.py",
+      "sha256": "0b55d9f6883c1aaa37224069db6be7a749d5286df55a73b12afca34982c3821d",
+      "size": 1113
+    },
+    {
+      "path": "mcp_server/atlas_mcp/domain/context_safety.py",
+      "sha256": "ab20bc4a881760638876b91ab4f8a1a7b5893095551ebd4121a71ab77611dc9a",
+      "size": 192
+    },
+    {
+      "path": "mcp_server/atlas_mcp/domain/databricks.py",
+      "sha256": "3a8d40232c096172793591916e8dca23438085271c8e21fedf2e798a80d1a9af",
+      "size": 331
+    },
+    {
+      "path": "mcp_server/atlas_mcp/domain/databricks_sql.py",
+      "sha256": "cb6658cc128cc94ec1562f7509ac1fc3c8ea85221a4f984d3a34e33d24c934ca",
+      "size": 8215
+    },
+    {
+      "path": "mcp_server/atlas_mcp/domain/errors.py",
+      "sha256": "28d437660dd59b70f76a8417a6534b16a9f2936d0c1f5b314c553625c03e5933",
+      "size": 9363
+    },
+    {
+      "path": "mcp_server/atlas_mcp/domain/metadata_records.py",
+      "sha256": "1b4e8b0e466b868b1811649ec5e85f26e5219b1281b6edc3715ff208635cc668",
+      "size": 12620
+    },
+    {
+      "path": "mcp_server/atlas_mcp/domain/modeling_policy.py",
+      "sha256": "15f9b76fafbb5c5190db5789059c6b8807b64d75de245dd0985e76fae49e5c16",
+      "size": 4841
+    },
+    {
+      "path": "mcp_server/atlas_mcp/domain/modeling_records.py",
+      "sha256": "6b8a1d11126f73b48c9e915efd181ccdf11bc128c77873c884eca6c0c8d60d26",
+      "size": 42750
+    },
+    {
+      "path": "mcp_server/atlas_mcp/domain/portable_validation.py",
+      "sha256": "4a5b8b38e5550984fb84f5e50a64170cc3ce0e2d4c8ea74ce87ea235106596af",
+      "size": 1575
+    },
+    {
+      "path": "mcp_server/atlas_mcp/domain/safe_json.py",
+      "sha256": "d76877c85194ebad70b1237ca6f7915f508c4d53578c03194126e6b4b2e5c8f7",
+      "size": 2900
+    },
+    {
+      "path": "mcp_server/atlas_mcp/domain/snapshots/__init__.py",
+      "sha256": "858f5f309c1ef370eda387efd5b540ee285f3ae173981cf765e801532f825832",
+      "size": 61
+    },
+    {
+      "path": "mcp_server/atlas_mcp/domain/snapshots/description.py",
+      "sha256": "96503b02e5210bfe143c88349d1b5ae1758f1ed2bfedf9f82df60a5c14bb6547",
+      "size": 2126
+    },
+    {
+      "path": "mcp_server/atlas_mcp/domain/snapshots/metadata.py",
+      "sha256": "b41bba32d3b3881c7477c550c03edf920a0109e390936737e506aa1ecfb5c79d",
+      "size": 17136
+    },
+    {
+      "path": "mcp_server/atlas_mcp/domain/snapshots/metadata_guidance.py",
+      "sha256": "d0298a310a18766924708fe924e6754b54d561ec3d3b47e35cc7acd2d451e21b",
+      "size": 26956
+    },
+    {
+      "path": "mcp_server/atlas_mcp/domain/snapshots/project.py",
+      "sha256": "32c466443a95b762d845d2a36e848cf5f79d37f52f16f361c21afb70a215785d",
+      "size": 17627
+    },
+    {
+      "path": "mcp_server/atlas_mcp/domain/snapshots/project_guidance.py",
+      "sha256": "3e546623881a1a1d09bb1d16759b082c250b2e85e2006d330407fcc691d0d40f",
+      "size": 18709
+    },
+    {
+      "path": "mcp_server/atlas_mcp/infrastructure/__init__.py",
+      "sha256": "74cd58a6ea3102ae922e527f18131d3e61f6d6a0600521f1012f1186bc1b991e",
+      "size": 42
+    },
+    {
+      "path": "mcp_server/atlas_mcp/infrastructure/databricks_sql.py",
+      "sha256": "e4e545ca208c26206c3fe13ef033082475560d6deb7fcb4235fe10d6bb74b75a",
+      "size": 10546
+    },
+    {
+      "path": "mcp_server/atlas_mcp/infrastructure/metadata_visibility.py",
+      "sha256": "2b9bb20befa82376bf7db300de0e7caba7ee9280dfb4a3730b8b34946c0f75c2",
+      "size": 513
+    },
+    {
+      "path": "mcp_server/atlas_mcp/infrastructure/postgres.py",
+      "sha256": "0d42af6b85331b70940f49635d9ad4e96566cd1e977d3ccb8cb0051456a4e477",
+      "size": 13026
+    },
+    {
+      "path": "mcp_server/atlas_mcp/infrastructure/snapshot_archive.py",
+      "sha256": "aaedec3fc1a68c229cbd776a0851f67a245c797f3110348a5c1e312a2c1a3413",
+      "size": 6019
+    },
+    {
+      "path": "mcp_server/atlas_mcp/runtime.py",
+      "sha256": "04a094a5818de4d4fe35a072bc2f49dd8863e3fa24abda4dd577f06e132a91f8",
+      "size": 3700
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/__init__.py",
+      "sha256": "55acbe9b75e234e5cdb6c6c516b2a3bc0c76e3bf96ee6186c1583762fd171c76",
+      "size": 33
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/catalog/__init__.py",
+      "sha256": "f40a933a8bd6dd69157288c7b410d71c70e5a8f8bf208e2072789a47afd472e2",
+      "size": 49
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/catalog/get_object_lineage.py",
+      "sha256": "9391691887eabee4e871d19a064d995b6ee56e39488b48f961114d1d5df5040f",
+      "size": 5685
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/catalog/get_objects.py",
+      "sha256": "1cf6af95a8684896296e7629cf808815fd5769a88309dde408ede40a7a9039d0",
+      "size": 5382
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/catalog/inspect_metadata.py",
+      "sha256": "37f3fab201144cb8e04edb4afc2380a67e07c0001217026f8ba60b545b3538f7",
+      "size": 16166
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/catalog/list_objects.py",
+      "sha256": "a3995863fb93b2028501a6e5d92e18d9a43139065fc07fc7633cbf274114f574",
+      "size": 4615
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/change_sets/__init__.py",
+      "sha256": "1adf587c532dcb40d580d41dffc611c238d32113e71870b2b4f59f64daafcf8d",
+      "size": 33
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/change_sets/metadata.py",
+      "sha256": "fdaaa9aba2d0926fd493e64339167294c24abbd033962829b042157587d26671",
+      "size": 41191
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/change_sets/project.py",
+      "sha256": "804d1601a5011714df3b803e585b0a2e68a4c287b023c6dd0709eedde3dc47a5",
+      "size": 102016
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/databricks/__init__.py",
+      "sha256": "1e0e10e022f7b4d3dbd23c72824188c0e49b15b6c8241d1417b6aedaae0691d2",
+      "size": 44
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/databricks/execute_sql.py",
+      "sha256": "82f48997b5719574675f8d0bcd993d28f267b2567245d1fc4787492e114b0187",
+      "size": 10129
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/ingestion/__init__.py",
+      "sha256": "b893681062a94f0b0f3a90fe5478ff588b25c3fdd82187012ccec4cb8225a3f0",
+      "size": 47
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/ingestion/copy_groups.py",
+      "sha256": "187c15ab5ea96cc587e27d5a7155ef1d5c2e7f5854a153a280be079fc54a0a69",
+      "size": 9735
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/modeling/__init__.py",
+      "sha256": "25f3b7692d49ab05f6089cb77e8478f0fcf339c47479fc565f83d59bee583c77",
+      "size": 44
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/modeling/project_details.py",
+      "sha256": "0c1704ad8c50de4baeb3d70f530f2d970f8b7ae623bff274a2823b94cc487389",
+      "size": 8430
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/modeling/project_input_scope.py",
+      "sha256": "c2419421a1e9771098f36b219b3ecf4f533958ec377a9a8759f2119b78c7e5b3",
+      "size": 9446
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/modeling/read_mapping_context.py",
+      "sha256": "698a0c849fcd8d28e09fc4d1f829ccf10d779c07228efc248fa27b8a0cb74845",
+      "size": 11791
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/modeling/read_project_section.py",
+      "sha256": "35f5848fe894f0a326f83718ed1e2239f0f072d42d39a10f82e9f313d7939f85",
+      "size": 10507
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/processing/__init__.py",
+      "sha256": "133ffafe91139edc3ffb4aef0336055e7fc718ee4c954595c0d1123f1f1db127",
+      "size": 48
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/processing/process_groups.py",
+      "sha256": "967589750e32b23238a708e65eab46837ed48f3a4a9e0507852b5833b9a17eea",
+      "size": 6647
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/profiling.py",
+      "sha256": "7be54eb89fd7d35089cacde090ff85ffa9bdaf2fba0ba73ed10feea904c51e71",
+      "size": 6519
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/snapshots/__init__.py",
+      "sha256": "816fd7ca7a6fc9b09f3fbf97ee43cd81f9ebc9446b7945cc294330bd2fde0eb6",
+      "size": 22
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/snapshots/metadata/__init__.py",
+      "sha256": "01a387d2a9dcfbc9d660804ee5e9a6ce730b234ad1625c38b1cfd7afba571930",
+      "size": 38
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/snapshots/metadata/describe_metadata_dataset.py",
+      "sha256": "95797670f553ada22189cad88231078c09e78223db21483f9a239aeb402b9ef7",
+      "size": 6468
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/snapshots/metadata/get_metadata_snapshot.py",
+      "sha256": "3cded9435cb132e239a819cfb269b13c550906e2bcac4a7c93b33e2045ebd931",
+      "size": 10188
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/snapshots/project/__init__.py",
+      "sha256": "48cc72f674dd94869b836972e6ae7e2ef428a6057045c8ae2068007cae06fffe",
+      "size": 49
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/snapshots/project/archive.py",
+      "sha256": "fd413b317610add7157c4003e576e6904277ac41169eb307efc4b224d39ccd45",
+      "size": 9243
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/snapshots/project/describe_project_dataset.py",
+      "sha256": "c766c849049687f7860b260462febbaa2575de4c135e1fc256e34cd48918c183",
+      "size": 6429
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/snapshots/project/get_project_snapshot.py",
+      "sha256": "47f6d020f95637b26b4a7fb4c8373c5a7f5960962416adc0be1dfe13b7ea8ba2",
+      "size": 10085
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/snapshots/service.py",
+      "sha256": "84e2733384a13144c2de1dc3dfbcdc034ff784bfdf0cfc680d3c62adc40dea9b",
+      "size": 4045
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/snapshots/storage.py",
+      "sha256": "5037a982fba8a6e3b976bff2940d62567404831b9a907d57f712b4c45e9d7dbf",
+      "size": 9648
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/tenants/__init__.py",
+      "sha256": "add02f698ac018a523fe8a28945082a190dbd3a84a4cd355921af5ca3464ff6b",
+      "size": 24
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/tenants/get_tenant_details.py",
+      "sha256": "73783ac022eb123f6213f5cd3ccbb689917fc87bc4efb5c2f5bae5834fe83d88",
+      "size": 10979
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/tenants/list_tenants.py",
+      "sha256": "654a517c23e2962202b91bd2152dab69a1e910a1e73cee6b7cd23ae731b898b7",
+      "size": 5950
+    },
+    {
+      "path": "mcp_server/atlas_mcp/tools/tenants/tenant_locks.py",
+      "sha256": "4ce7ea2f4b42ad70e372116cb6a64ea63808ad3c5d67984998562692d9e77c16",
+      "size": 19289
+    },
+    {
+      "path": "mcp_server/pyproject.toml",
+      "sha256": "162a591e22a0583e4189140c5e88c95fb7517640320cf26c31dadcf892eb2c02",
+      "size": 1179
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "d505d2d6bc88d67d4705091610837ca3668e2e6d8322b698d78d3bb6e43b3769",
+      "size": 80928
+    },
+    {
+      "path": "package.json",
+      "sha256": "4bcbf4368d3b869cfee854d585b504aefd0d66d767d92689884e383bf48c8b8d",
+      "size": 309
+    },
+    {
+      "path": "pyproject.toml",
+      "sha256": "09815980768fb4a515e99b4f82233ec74366c4d5477064c96c121c0ee4b37978",
+      "size": 333
+    },
+    {
+      "path": "uv.lock",
+      "sha256": "a112d754f753256938a7c6c013c5941a850d1cbb299274a5f3247196c6a75dfa",
+      "size": 227177
+    },
+    {
+      "path": "web_app/backend/atlas_platform/__init__.py",
+      "sha256": "574deae96c18f879e1865d40321e42abf96655344d0a906c50c1b71f55415fe5",
+      "size": 38
+    },
+    {
+      "path": "web_app/backend/atlas_platform/app_process.py",
+      "sha256": "86dcfd2941f43eb0a00a3d21fd25533a13fb9fbb4a3e89eb2134155c748c26e4",
+      "size": 3992
+    },
+    {
+      "path": "web_app/backend/atlas_platform/authentication.py",
+      "sha256": "24e906b01e0e40344989719f532f550054669c74641bb76210cb13d7dbc90a97",
+      "size": 7877
+    },
+    {
+      "path": "web_app/backend/atlas_platform/capabilities.py",
+      "sha256": "a3fe9b53eeddb8acaff247421ec13b039c8ddfbeef16f251ed4114521cd2098d",
+      "size": 13606
+    },
+    {
+      "path": "web_app/backend/atlas_platform/config/agent_capabilities.json",
+      "sha256": "36c55a770f81734be300d43a85b4d0501913d5d1f7eba53758d782ed488b468c",
+      "size": 3422
+    },
+    {
+      "path": "web_app/backend/atlas_platform/config/agent_execution.json",
+      "sha256": "4438577467645d7349c4ecee8e8a494b81d325caabd7928a2af046ee8b7661d7",
+      "size": 169
+    },
+    {
+      "path": "web_app/backend/atlas_platform/config/analysis_validation.json",
+      "sha256": "8c047da5a2fb7bf5ba284c1cd74b109e1c10d2bf13f4b30bf02dada7d47e9730",
+      "size": 194
+    },
+    {
+      "path": "web_app/backend/atlas_platform/config/profiling.json",
+      "sha256": "3feb817c4426b8af9fe19f0f9aaa057ad25d90d3d496edfd402c673542b6ec83",
+      "size": 162
+    },
+    {
+      "path": "web_app/backend/atlas_platform/config/workflow_execution.json",
+      "sha256": "1d8bdfab714f8a808b4ac83ca74ea45f62ecd332d1fe8b8fe8ba4ba2ccb864cb",
+      "size": 204
+    },
+    {
+      "path": "web_app/backend/atlas_platform/configuration.py",
+      "sha256": "1176a4534d8ce45548fe682c479ca302b89e4e5a8a1dac00819beca8fcac931e",
+      "size": 10576
+    },
+    {
+      "path": "web_app/backend/atlas_platform/database.py",
+      "sha256": "61090dc20da38156b94e4e589fdd404d2f6cce2ff88e1200f154c298eb8401fb",
+      "size": 27202
+    },
+    {
+      "path": "web_app/backend/atlas_platform/dependencies.py",
+      "sha256": "e1cffe0917fc64d79e6a158e2cfb11b1e99025a87e00c9d2e622be17ebf0f87c",
+      "size": 636
+    },
+    {
+      "path": "web_app/backend/atlas_platform/errors.py",
+      "sha256": "0b8ef23102cdb51e7e2c36bc531529014177498421e500a851b8e017e9c186eb",
+      "size": 2075
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/__init__.py",
+      "sha256": "9a27a3cf6cf28822e812af392deca97d0a6dc84fb9bdb82d2073cf308af49103",
+      "size": 56
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/analysis/__init__.py",
+      "sha256": "a08612fcf11de80f0f52a19b108b18e8a4e4c1d15dd17c9fc05474ef3a285d2c",
+      "size": 3016
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/analysis/candidate.py",
+      "sha256": "b53064e1c2ba82dea8d5359d1618ea6de44fb1bc0b6b1ca10478fd2b365ec8e8",
+      "size": 18266
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/analysis/read_contracts.py",
+      "sha256": "eabe753163bba0c36a36f98742bf7687e97234ee4d1d71af826a4d3b8232d63c",
+      "size": 5403
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/analysis/read_router.py",
+      "sha256": "bb65d0c4143239e195c7500e0496f56c7efba1ae725ed8d5d9aa25352094058f",
+      "size": 4488
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/analysis/read_service.py",
+      "sha256": "2f579295885ca7ff411377e437d49b2ac50b48e7f36f41a1d4db78d54c58c3a7",
+      "size": 25150
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/analysis/router.py",
+      "sha256": "5e0cbb23d4288e720cf16a52657890a3195a9da71575bd0e957782132be89447",
+      "size": 2769
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/analysis/service.py",
+      "sha256": "1cafa11bbe995cca54fa2161d30116169d923088c63ae4f6517f16c4fc143d38",
+      "size": 21383
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/analysis/validation_execution.py",
+      "sha256": "e2b2ef46c7cc14ee3fde2b15a6d0965a0b9c2013c3eb19ab2693eceea5bf78c0",
+      "size": 16654
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/analysis/validation_router.py",
+      "sha256": "7ef868b5e875b8da3e2b72379cdfaf0ea3acf3d7a8ea05c65436547731a23dd6",
+      "size": 2561
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/analysis/validation_service.py",
+      "sha256": "35e15f086f1be019a8390f7f2f131c8d249919ac5003e8739f1c7e93e8c1a136",
+      "size": 30108
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/analysis/workbook.py",
+      "sha256": "56f5b1b23b3d85fbb5adedaa637c7b21b88fc717f770359d4486680a2a6086d8",
+      "size": 8119
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/code_generation/__init__.py",
+      "sha256": "78a1b14e8d75bc3ba0123151f64b59ec22f26f954745c94d893269266199485c",
+      "size": 2015
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/code_generation/artifact_context.py",
+      "sha256": "1cb829107b4c8078b2629f5ecfb0a5d69036ee290b154fee4f41dda64e2f9d45",
+      "size": 1210
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/code_generation/candidate.py",
+      "sha256": "d137b91ecacbbb85ef92f6f3b53b53e0b2f927102a4cba1dbaa8f2f33a84c7e5",
+      "size": 18401
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/code_generation/context.py",
+      "sha256": "0663c45f73331569bbb89a33604f17bee608b2647691d3a2505e72e732883394",
+      "size": 22905
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/code_generation/contracts.py",
+      "sha256": "eec53baf650eef62deef482a3bd6f8a49e372652a16f24087b85c97e65cf947b",
+      "size": 8350
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/code_generation/downloads.py",
+      "sha256": "50c9556aaa56127a368df6df46d8c20fe324526ed7f6c1ba68e124a27c3979a2",
+      "size": 4445
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/code_generation/read_router.py",
+      "sha256": "f3f56aacc7eb6db7121b017af7ad46818e860732daf6fe94f8a46bf79e055fcc",
+      "size": 6909
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/code_generation/read_service.py",
+      "sha256": "04f0d02ce779fc0fd5bc0ff59006c9545791af1cb1db7ebd7229f10e25dee817",
+      "size": 33642
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/code_generation/router.py",
+      "sha256": "998b62ede913d6be9f11a3a412dce5bfb6551250c660d6c6d9820d76d0c3d41f",
+      "size": 2386
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/code_generation/service.py",
+      "sha256": "e40a5fe3e8a8829ace670e709e0eeea0f31bb19b2add1af370af556192d6de1b",
+      "size": 33758
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/context/__init__.py",
+      "sha256": "05ca98455836daaf883766c2b5bb51e92c1bb622306bf62f1b129aa1debee75e",
+      "size": 222
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/context/authoring.py",
+      "sha256": "20d1e850ea6164104bb30673e1bf1de3dbc9cada487fa21be9923a5f5847e200",
+      "size": 8739
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/context/context.py",
+      "sha256": "836370b85f9c82d9794689eb763e942adf8f06dad5b511b0679f643b7d30739c",
+      "size": 3304
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/context/contracts.py",
+      "sha256": "c5394155b816189019a06d8e0cd774506c0e35678e0c2b8c06c915b2fe31f92d",
+      "size": 5499
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/context/repository.py",
+      "sha256": "6fd433627b8607dcb0034d914865c6bc7e20f5169efefecc59a5abd91c59dc97",
+      "size": 11576
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/context/router.py",
+      "sha256": "664e961558bb974be5813fbcdf136459b26505e0945729fbd6c13d861dc55811",
+      "size": 5396
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/context/service.py",
+      "sha256": "eb4ddb10927dcc9285b00cc6b45f06d5ee67e9a1e085d5a3f5476d1eb17b86d9",
+      "size": 10649
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/dimensional/__init__.py",
+      "sha256": "938bec6b82f64469cd6e5491b538af5037508aeaacdd7611547b17178bb98376",
+      "size": 3299
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/dimensional/candidate.py",
+      "sha256": "bafef931424b20cfe6df278aa189ca8bd83ba7a0e7d0286244c192e9da570c43",
+      "size": 35126
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/dimensional/policy.py",
+      "sha256": "fb8758810e33afcb47b1f4e9f50089a8e88657aa95027bd3db66d8f776b5aaa0",
+      "size": 32876
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/dimensional/read_contracts.py",
+      "sha256": "efa4f7824268b0430956b66deb11f942979cef56d15de89d9ac0c8b151ae8329",
+      "size": 9086
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/dimensional/read_router.py",
+      "sha256": "c7b8fbbd9660910722b2611f2a8739d84f5ddfb07aa7667a5d71934dc2f1ef4b",
+      "size": 7161
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/dimensional/read_service.py",
+      "sha256": "59b38ddece5130146f2cfa65add2a2b2edf3aec817c26445ad720f82d5010a4b",
+      "size": 43651
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/dimensional/router.py",
+      "sha256": "9c856260bd22988938ebf066a7aa8a578d4b06bea43f6531ee2d80fe7c729cd9",
+      "size": 2716
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/dimensional/service.py",
+      "sha256": "2d91f056635ccede204c54d9002a9344f24b987d1cdc7a2b2cd0872f9aca2b73",
+      "size": 30510
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/logical/__init__.py",
+      "sha256": "70f9f9e987a1293f79c1f773c9558ee46042b4f4935da520b2f538a2b6b39a36",
+      "size": 3239
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/logical/candidate.py",
+      "sha256": "2ce97a9dd49090afc657895546a51ff0edcee737a87476b145d51b1832f84fe6",
+      "size": 71455
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/logical/policy.py",
+      "sha256": "c0228bf5e9ae987a338ad14a7b65bdd8769935db725844155ee6d811fabc32c3",
+      "size": 10785
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/logical/read_contracts.py",
+      "sha256": "6fdb646685b49badd271ce8d72cc8a691f6a5d35c7928ab8c037adfd8aff8c23",
+      "size": 12364
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/logical/read_router.py",
+      "sha256": "beeca4b77a1076156933660e61b19649e1601c537226fdc3adab5861db752d76",
+      "size": 6907
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/logical/read_service.py",
+      "sha256": "3b12a93d0f97179fe9882a89ce19a5a3b2e1d217cf2d741bb5d418b38e540373",
+      "size": 45849
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/logical/router.py",
+      "sha256": "26c3286ca4aa984583fc3fadc1faa0a265485a3b9a2827ac3a0288c8bd01cbfa",
+      "size": 2672
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/logical/service.py",
+      "sha256": "3a205e6cbbc771d64326a8ff217678bec6a1dd8b58b479ef9949020b85c2dbaa",
+      "size": 28022
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/mapping/__init__.py",
+      "sha256": "9da91da470cf29c825f37a7f8cec1c27816e46d011e34e240a4cd80a894fcf2a",
+      "size": 4329
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/mapping/complete_candidate.py",
+      "sha256": "6d27ff540842db7f49e01fa7592582c6a563f2b0903df9e567a4b687e2dc1112",
+      "size": 13895
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/mapping/contracts.py",
+      "sha256": "b4f8eaba1d39d3cb803b21ba3083e3c1acb7560deb7df5ef6633ccb8b502823e",
+      "size": 3954
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/mapping/editor.py",
+      "sha256": "bbbc047c9a65d3c7c09dcf8525814ec6312941764cb7fb22aad88046a6850eb8",
+      "size": 18346
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/mapping/execution_context.py",
+      "sha256": "946663913b37d90a8b5c9cfafd38c2e8d8398dbed5395e8c3fb88135698b15dc",
+      "size": 55719
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/mapping/export.py",
+      "sha256": "e1a5cfb4f639c55293fd1172dba4b820044ffbcb2ef3cae1d411b79346688cee",
+      "size": 12299
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/mapping/output_schema.py",
+      "sha256": "7c8da1f7c52f99677722d41cc16dfd97ff35f4a1c9dc8f51b9f5427c27ae3d60",
+      "size": 5261
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/mapping/preparation_contracts.py",
+      "sha256": "9009af681014fdf4fc244e220c1d859bb87fe28ebe8177498cf9f71bee2a43e0",
+      "size": 16110
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/mapping/preparation_repository.py",
+      "sha256": "7b7f0929dad49c22b896dd581e028f4dafc4831b60e6dbb8b7b62d3eaf2680b0",
+      "size": 32807
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/mapping/read_contracts.py",
+      "sha256": "86aeef0cdcc601fb3b74fd5a4e2deace5412dcaef338393364860043842517b3",
+      "size": 7584
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/mapping/read_router.py",
+      "sha256": "c394479e9f1b616ca6164b1de80d21748813079d907a2215bcf9ba51d1c5122a",
+      "size": 6818
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/mapping/read_service.py",
+      "sha256": "9d33de44a150b6be4342cfc89b12b2433d6f526a5bdb1b50c41e08f8f222a92f",
+      "size": 23750
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/mapping/readiness.py",
+      "sha256": "89017cb3c62e75c82faab0b274322ec300349d16f0f74c8f08fc42b3a1496d5e",
+      "size": 10926
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/mapping/reconciliation.py",
+      "sha256": "e0127f481320f5bf363a7775dc0ba8c284d31cbe9a5734f6503a389c951b5123",
+      "size": 11471
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/mapping/router.py",
+      "sha256": "d201b89ea7f0435fe145ff1a3e2b4dc397ebfda6f1193d7beb75301deb01d50e",
+      "size": 2672
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/mapping/semantics.py",
+      "sha256": "81ef958880c881d80616011f7875c3734095ab18ab2a18ca971d8cb236f2c859",
+      "size": 10400
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/mapping/service.py",
+      "sha256": "1cd95deeeef65d31e02a70a63dc97b250e79c3f46c30d834ebc1e85fe3f506b5",
+      "size": 28521
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/mapping/workbook.py",
+      "sha256": "8f09cc48a48b0f9427097ffe61afcdb5b4c1ef68a3a1faa95e1bf01124c8883f",
+      "size": 10414
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/metadata/__init__.py",
+      "sha256": "771f82bc6803f1135be0150d3958fea1d7d5f95024b02e8dc5545d546569d9fd",
+      "size": 1701
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/metadata/contracts.py",
+      "sha256": "7bd855d51497a7559e8ae4d25e47371ee6592be973d05b30e52520b15752a766",
+      "size": 11067
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/metadata/repository.py",
+      "sha256": "cd35f657c40973a062e25616924bd33a207a2d96f6f3ae3057ba1637d6094481",
+      "size": 45305
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/metadata/router.py",
+      "sha256": "e04fb0f9ac13523150cbd176199cbe951ed48010aee3089c9e63916189f467c3",
+      "size": 8691
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/metadata/service.py",
+      "sha256": "8b8dcd18313edff9354057fdf2906e6083e427ba539bdfbf1228eec80f95930b",
+      "size": 12373
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/metadata/workbook.py",
+      "sha256": "3b482f77157e30e643b79578d4e83dc04649ca97940d5b95dd498c8b8005974f",
+      "size": 17461
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/metadata_change_sets/__init__.py",
+      "sha256": "a9230a71f197c3c22b620a44409afc68b71155d9bc5950cb38be8e96708e0a6f",
+      "size": 1042
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/metadata_change_sets/contracts.py",
+      "sha256": "767149daba01ad2bed264b138e79ba0e43bd137211c94d62734d14645d9b4759",
+      "size": 5808
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/metadata_change_sets/router.py",
+      "sha256": "298e7b957df909c808256f5ce9c0d810af308eec2a29a202c97f1ad17c0cddbd",
+      "size": 7856
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/metadata_change_sets/service.py",
+      "sha256": "39f13b7dc9c0451550e6d68faa8466bfe66e933beb16d61fe5ae8c619db5743f",
+      "size": 16334
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/metadata_enrichment/__init__.py",
+      "sha256": "5db499bd7f74b3bbf9379725597692a536da7862a27a771e732651e080b2259d",
+      "size": 78
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/metadata_enrichment/contracts.py",
+      "sha256": "9707e48e938d8179d951c0063a95277013a0bb16b2a10d2a042584b59343605c",
+      "size": 6120
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/metadata_enrichment/dictionary.py",
+      "sha256": "e800cd777b48ff7de5ad4075789afa4463ffabde7ee9da1bc5acc81088d9a51b",
+      "size": 5303
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/metadata_enrichment/evidence.py",
+      "sha256": "148aaaf5abf9642d38ec197c29bd86c4501b0c2005046a167b086b69f6830c4e",
+      "size": 14676
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/metadata_enrichment/inference.py",
+      "sha256": "c6577373e5989df25bee15c4616c3f7a71f0ce2fea2798236cfcb4c10c00a129",
+      "size": 7151
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/metadata_enrichment/read_contracts.py",
+      "sha256": "2b0041508f3760345eb6583204ac08a2462cf81eaac5d3240b927a7cb56e3533",
+      "size": 3416
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/metadata_enrichment/read_router.py",
+      "sha256": "9d92c6f8d5725e607ecb02ae6b60bef326d233f16ce4adca2f1f060baa127e3d",
+      "size": 1652
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/metadata_enrichment/read_service.py",
+      "sha256": "a9ce5f4dcaddedf26af53b7c0160b040e0e54261c1be83f2f5a7529111a71658",
+      "size": 4516
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/metadata_enrichment/repository.py",
+      "sha256": "12f5b4eab984ecc474e056d2002b075d034a4438615187a9c024fb4f075d05a1",
+      "size": 8018
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/metadata_enrichment/review.py",
+      "sha256": "13f3e730e6a1797d0e78e45a25765d6f4ecdaf79dbdbdff6b1549edf80f45c8e",
+      "size": 8750
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/metadata_enrichment/router.py",
+      "sha256": "e25719156a0ef318a0fac80252d33afd5e40091491f49e7d1ebff158762e5720",
+      "size": 2444
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/metadata_enrichment/service.py",
+      "sha256": "0384a5df3a29d26d168c885bcaa4b8d931fba463cdb0b887d30d15bec6e867b5",
+      "size": 28453
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/metadata_enrichment/workbook.py",
+      "sha256": "88248e7d7d50e821bfa1d4b5eebc0a7a5a52c295a81ad3e6878ef2cd30812f3d",
+      "size": 6570
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/output_templates/__init__.py",
+      "sha256": "4d7f35d879e5f076ff237b1ae2336e55f0dc013b7ddafbe11ebed1c77004d5e0",
+      "size": 863
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/output_templates/contracts.py",
+      "sha256": "d2620d111355ba1bb8c6dfd8aa49387eca70561fa9149bac714af12235ef3bb3",
+      "size": 3267
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/output_templates/router.py",
+      "sha256": "3470ce737152729b5b65aca0b5eab5dd9906435b3a83519fa03a542ed2dd64a4",
+      "size": 2498
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/output_templates/service.py",
+      "sha256": "7659724ba8292fd216264fad38a7388b3d8ec9daa319c7078a7c98f5a2cbaf58",
+      "size": 12219
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/profiling/__init__.py",
+      "sha256": "0fa7674b029e3338a4ff850559e6db2325bf1e70a3aec057ffa25a09b443210e",
+      "size": 2327
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/profiling/execution.py",
+      "sha256": "e2d94796c2d10f554558a48f62208b031967578d92d0adac3f6286d82dcc3aac",
+      "size": 1007
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/profiling/read_contracts.py",
+      "sha256": "63150244901f17e35dcc19c1be95268cf5ccf325878c978abe7cd54ace5c1fc2",
+      "size": 5903
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/profiling/read_router.py",
+      "sha256": "3c83f4b709792616d6d0df723b37a6280655f3e335b97de5e01bb3e054cc5468",
+      "size": 2897
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/profiling/read_service.py",
+      "sha256": "fb8f7f23ed0bcd15ebc8540fe2cfa60e2578d613a93cc6f682a6734d947f8f84",
+      "size": 14175
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/profiling/repository.py",
+      "sha256": "4e7b9c835d778708382d72eda257f01951d682b2cf75eafbdd50fbb48aa5b408",
+      "size": 21039
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/profiling/router.py",
+      "sha256": "cd125eb2e44ca4bbb1a71b7805b1ff16a0358bc6005fc79cc7ddbd8bfcc38771",
+      "size": 2606
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/profiling/workflow.py",
+      "sha256": "0887d4bc046f886079ae4fe1bfde89d5cc5a7d4adffd38890d9a33b7a4b60451",
+      "size": 16199
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/project_change_sets/__init__.py",
+      "sha256": "0f52b374b91d2762f4d9849a12518429c23167202ab5b9a6442bb8ee5c6bd28d",
+      "size": 57
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/project_change_sets/contracts.py",
+      "sha256": "fd528c3d328bce61d780bf5e9d7df08dc10619afd3afad443e58f3c7ff0e5639",
+      "size": 11135
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/project_change_sets/deletion.py",
+      "sha256": "b956521db99e71daba49a27a897531c0bb6b6ab3323a65eb419176c4dfe2bdce",
+      "size": 5047
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/project_change_sets/editor.py",
+      "sha256": "fdeda45f22a29f148fc7d5b1d861dc440123a57d7af2630279adc23f11edbc13",
+      "size": 7141
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/project_change_sets/input_scope.py",
+      "sha256": "ace2a7ad7056db65d86c63eec62bfd0e36f13bf5188febbf466867d6f85ebcf2",
+      "size": 3289
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/project_change_sets/repository.py",
+      "sha256": "a32d97df47aa8a8bd7c86bc6f5415b2ab1684b4400aa0464dc5cbff1576e6e61",
+      "size": 33221
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/project_change_sets/review.py",
+      "sha256": "220ec6cec7d56ecb7b215995108032aba5b2f4a05a2e0112010e91a95262d227",
+      "size": 20757
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/project_change_sets/router.py",
+      "sha256": "9a807c605136a6503fa122a96ca119a4f882ca0a10a0245d2b3476c6b572c4b9",
+      "size": 19374
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/project_change_sets/service.py",
+      "sha256": "4a35cc618e8e58f1139fcb1818afe1af02c127ae7e4a66548d4430c335e16ece",
+      "size": 98324
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/project_change_sets/subject_areas.py",
+      "sha256": "e85f55d75ced5e06c0601b509f199bea92d37d76763107954b287d4c1e72461a",
+      "size": 6988
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/project_input_scope/__init__.py",
+      "sha256": "e812e08fa4157e0a5e97c29f1631b79031d4e83ed4ba0a0126d6993ad31e010e",
+      "size": 1025
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/project_input_scope/contracts.py",
+      "sha256": "ba470f1714a3323d732d3202f854b520a32353757aad3cc232bdac9286844a43",
+      "size": 5980
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/project_input_scope/router.py",
+      "sha256": "ac487eb0f756728faa152ecaf6c96d980461229cc093815098888373cee02210",
+      "size": 5152
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/project_input_scope/service.py",
+      "sha256": "df66339dc3cbe46ebd36a7855f7ebdc63e5dff023b72bb4f5a813681b8322236",
+      "size": 23737
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/project_targets/__init__.py",
+      "sha256": "6f7c1d4f176a79da2b082cf68f3d045efaf09cefd1707204c62d7f0f31e902ce",
+      "size": 67
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/project_targets/contracts.py",
+      "sha256": "7b11b58b8f7e6afd22cb439367392db36a34333f5540a0dea2a5ed15f8ad5577",
+      "size": 2168
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/project_targets/ddl.py",
+      "sha256": "9576339a70684803689f010d4845dfbda048b8fe705bfd14256df79724263e10",
+      "size": 8223
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/project_targets/router.py",
+      "sha256": "2cbc38525b331434106b5ee87c536b5ccc6da958dc6cc215f4710f600f6972dc",
+      "size": 3693
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/project_targets/service.py",
+      "sha256": "6ec77e4d57c4223c0bf52a676739e2d0d6968af1dac0690fc80ff0860a9ea059",
+      "size": 17541
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/projects/__init__.py",
+      "sha256": "3881415e0df0e74bbcb2d213264b82cacd9b6cc934a084e288ccdc5fb6c79962",
+      "size": 1493
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/projects/command_contracts.py",
+      "sha256": "e90bd1b620c1bb375445bad5628acab32dd12e906ecd30dd783eb31c892f68ce",
+      "size": 8448
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/projects/command_router.py",
+      "sha256": "66d62b5c4fc7fcfb9622856773ee9578a629e238a6508fe56f97701109ddb205",
+      "size": 3169
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/projects/command_service.py",
+      "sha256": "e39b405754e2a26e9dec31d3acd020cd8cc9dd70eba7cbf7e9d5415418be6364",
+      "size": 13397
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/projects/contracts.py",
+      "sha256": "4c14bf8275d0082163db70970ea41385738674c4193fcaae996cef33d158f33a",
+      "size": 3531
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/projects/router.py",
+      "sha256": "82fad408d8b025bb1f2ac4decc117080efa80c674aaefede9047e97e89d63eb2",
+      "size": 2459
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/projects/service.py",
+      "sha256": "4e7e3c046b4ec67deae9cf2a3045f8126dc7fc4af580b3b84b531765f340f08a",
+      "size": 9165
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/projects/templates.py",
+      "sha256": "c24c1bb28f6ba8bab6cdebbabeea2a79bb88f0be2117508d63b69de28cec8ce2",
+      "size": 962
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/prompts/__init__.py",
+      "sha256": "ce3420b8a1edbe3aae438a3c89cc2d892900f327eacc0e4e3169621af85acdbd",
+      "size": 1952
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/prompts/contracts.py",
+      "sha256": "9e3c3a2c9e8a1f22f3a3c91f5a43e6901b7668d24e1745b7a3cfbaa076e28e6c",
+      "size": 15097
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/prompts/router.py",
+      "sha256": "ac862d2f7dd430087c236d2441b99b7a1a96061312173ab66c3384f588e0bf62",
+      "size": 9713
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/prompts/service.py",
+      "sha256": "7862e76c2bd5b732c217ab092d65da7c11c4b885bd2cbacdc90e35d28bf95f91",
+      "size": 42639
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/session/__init__.py",
+      "sha256": "1988bd7699a8d9baf81ae7d3719b097eec1dfd7e7a34926c105a3990eed4f184",
+      "size": 463
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/session/contracts.py",
+      "sha256": "32936891c56215fc4f7538dc185b1feabfb7364ec2a587a4db72a3453de443cb",
+      "size": 431
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/session/router.py",
+      "sha256": "89734ca9b5d23bc0f0e178957c991804b0b954cd868e80b32cbb77835a3fdab2",
+      "size": 949
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/session/service.py",
+      "sha256": "1d39c0250f39d682e3869538e306985e58f75b2ee34c7a26f8e68ca66e27b721",
+      "size": 2981
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/subject_areas/__init__.py",
+      "sha256": "3347336259a35de04a0cab70963bf5316a8b7d1236c706d3c7db861d99282939",
+      "size": 1067
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/subject_areas/candidate.py",
+      "sha256": "91429d0758ed414b6d677cf35165f6847577ba4b017abf02315e3c6c1819c14c",
+      "size": 19965
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/subject_areas/read_contracts.py",
+      "sha256": "23a4f97dc46618346fcc2d03abe50625df4194ac6539838097e664dfad1794b2",
+      "size": 2999
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/subject_areas/read_router.py",
+      "sha256": "93d5f24a432211b37439d8fed19d3fc09297cdbbdfa8f359d158db952251ffcb",
+      "size": 2471
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/subject_areas/read_service.py",
+      "sha256": "79c7cc3dd1543880a4d090d6199a0c3b79781362836a72b7dcd4302416beecb6",
+      "size": 10012
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/subject_areas/router.py",
+      "sha256": "845f1526d033773b5b6b252ef34f436b274fb901d57e8125dbc15a1d0c22bc9e",
+      "size": 2723
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/subject_areas/service.py",
+      "sha256": "67dca303a0da69540bd0f8464b3561e4e30bfaed7aff543ce756b4982ce044f4",
+      "size": 17275
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/tenant_locks/__init__.py",
+      "sha256": "f526e6db91b96701f9050c4d1b2988596ebf85938c4abcdeb06359d5ede63b03",
+      "size": 908
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/tenant_locks/contracts.py",
+      "sha256": "cb49fe42d5f143a1aba737d97359cffca5261e0ea304f414563adff558026c2a",
+      "size": 3113
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/tenant_locks/router.py",
+      "sha256": "08ff004e9126b35e463556bf5e3beb2a6dce180a6653392d67025ca5b0b4eb50",
+      "size": 3211
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/tenant_locks/service.py",
+      "sha256": "610df1946a694d3c70a866b9030a97d72aab71a1f6a253ea8eb857e7170d539a",
+      "size": 10250
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/tenants/__init__.py",
+      "sha256": "8c5cadc8ed53e926ccf8522c2b70b1e6299d9b018a18eeabbc29d69384830a71",
+      "size": 702
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/tenants/contracts.py",
+      "sha256": "69f1f8ca0002040513ef0f57019ad770bbc3d681fa682a8e77cc0eaf1690cbdb",
+      "size": 2867
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/tenants/router.py",
+      "sha256": "f167197b67fa8e3e4c4cc7a40cc45470bce9671c52a75e2951a7c86f4fee8611",
+      "size": 2055
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/tenants/service.py",
+      "sha256": "1987dcb4ada2744e57cd7966584ee5290346319d801df851a2d9e0db8a12974b",
+      "size": 9047
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/validation/__init__.py",
+      "sha256": "31c08b648f73d6b9dd49570640a7db02fb41231a3dc3d2f61ad3e4b4a9cf0a6e",
+      "size": 1754
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/validation/candidate.py",
+      "sha256": "b3cc6d2452b86ebdfd150b3efc4fcfbf1212fe5c6c99856cc884af692af459e4",
+      "size": 25903
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/validation/context.py",
+      "sha256": "339abc0d0ddfe373f0064c861cbb9639586b828cab82050f1d491dbb8ebbffc4",
+      "size": 29629
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/validation/contracts.py",
+      "sha256": "6418938b8f02470bfcce612030558f73f3864ff1078b3f1e7cf36c88854588fb",
+      "size": 4030
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/validation/downloads.py",
+      "sha256": "b5edd3a72a583dcac00c9efde70912cfb90e6f9802fdd993344c4f5d49711a01",
+      "size": 4331
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/validation/read_router.py",
+      "sha256": "7d4bf524ee1287c0762762244a9c8fafb0c2ba9f38e9bd10629cc9331d71887c",
+      "size": 3980
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/validation/read_service.py",
+      "sha256": "3e5c5713c81f7d0912bca9db5dcfd9ac52e5f6d6f59267ef22e688ffefc66a4a",
+      "size": 33819
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/validation/router.py",
+      "sha256": "de853263256fc632b7588d066d7341539095f57000a2c0fa1d7d1213d9a4e086",
+      "size": 2464
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/validation/service.py",
+      "sha256": "05f7ab59781f6c4514324999b23492572e2fd3064b5908c181eb13cdbe296b73",
+      "size": 21483
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/__init__.py",
+      "sha256": "2f0b78ff6f5820f86fe10496ac81334e383e94fd692b2f81a0ff0e05ad067ab7",
+      "size": 48
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/authoring/__init__.py",
+      "sha256": "78c541cae1b8d88cd42b81ca7534b6244874f5a307614d1faf01c57ff6e97d5f",
+      "size": 1890
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/authoring/agent_execution.py",
+      "sha256": "a2aecaa955c274f7794a243d261365287f47d0cf78dc5c8575610b5ed9842609",
+      "size": 16523
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/authoring/audit_policy.py",
+      "sha256": "264e32078b2ffbc908028a77f8ef2a6d1ae2b713ca731d728137b07e01b2fc14",
+      "size": 1405
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/authoring/change_set_apply.py",
+      "sha256": "424cf62a3843ab9304d03d86aa73f81a9467a7eb46557163ae708a401699dd47",
+      "size": 13241
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/authoring/change_set_apply_router.py",
+      "sha256": "c95781fb3f7cc832aa40d650318371eb53245cf9d9f4b505ea4f5c63ef889b26",
+      "size": 2043
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/authoring/change_set_handoff.py",
+      "sha256": "5572620462153fccc8ec3dd9d5267ce0dd68624fce35b7c2d339a1b04280e8ce",
+      "size": 22950
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/authoring/context.py",
+      "sha256": "6a3f0ed270d991df37b5b7e7a5bf156c1629f5b6544b7e31864aa46a2cbb9fe8",
+      "size": 81317
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/authoring/context_contracts.py",
+      "sha256": "e4b40236ae2307eb431f8659fdf2a62bbca8b7b76471b951041aa2cfe6662853",
+      "size": 136033
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/authoring/context_inputs.py",
+      "sha256": "ed401968207a7e95c6420a521f1e5e1370c5629d6327373501a2cf32661633d1",
+      "size": 54081
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/authoring/context_readers.py",
+      "sha256": "dae0eac315d4682c4098dc3b5749d10d912cd2c90e8786014e3ee073fc83a6f1",
+      "size": 22622
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/authoring/downstream_contracts.py",
+      "sha256": "5f4c0b9e4065b9c12c2be1913b77bca473b6dbbccd8f9df6754189142f563f25",
+      "size": 117707
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/authoring/downstream_inputs.py",
+      "sha256": "974750aa460d5921b7ae9082aaec6a985eb19fe9b729c02942f81a75bf6b4b25",
+      "size": 21155
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/authoring/gold_policy.py",
+      "sha256": "6a7e128784ee3e95dcaac237a7f35b1b57113a89df485b800e302f7ab99ecb0f",
+      "size": 2358
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/authoring/lifecycle.py",
+      "sha256": "5971154bf59f11b42e3a11490680127fe361cc74890dcfd8378dde6cc6b016df",
+      "size": 15640
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/authoring/mapping_input_schemas.py",
+      "sha256": "274d7aa3964579a127f01f9bf848bf11489f30f0b0d93ab9498cfae860fbba31",
+      "size": 4563
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/authoring/naming.py",
+      "sha256": "edd784fa5d4b3dc556035c316bc64c96156aadd63efac9d2907c6602c4881142",
+      "size": 1134
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/authoring/no_op.py",
+      "sha256": "2ca0599dc5f169221af9152c0644a232e378652a42268e04f9620347ddec6bef",
+      "size": 10052
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/authoring/plan.py",
+      "sha256": "f2193af3a384d47d0a93bd642421f7ce62b4816abed4626a229b362b015c26c7",
+      "size": 26431
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/authoring/progress.py",
+      "sha256": "007333984a741863467c0264a40878930686018f061cbdf030fc946b4244f02f",
+      "size": 3110
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/authoring/prompt_inputs.py",
+      "sha256": "94282707bc0f0d3b628489eea67ed2232c4c27eb215e4d5609767629dccb4a47",
+      "size": 47215
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/authoring/repair.py",
+      "sha256": "e71ce1823e5e93b042d7d9fc5cd1c7784580125816f01003ae8fd21dc08641d7",
+      "size": 30218
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/authoring/stage_runner.py",
+      "sha256": "3d55eb4799c505be2755b47cd24bf246805e1a4837fb5259fd9321c57ff52b8c",
+      "size": 5129
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/authoring/tool_configuration.py",
+      "sha256": "531ea3591512025a872de3589167a63223ae44f638d080a14248889d75a87a85",
+      "size": 4318
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/authoring/validation_evidence.py",
+      "sha256": "bf9c0cf89909fe8b057adc8dab55983b91ddafff5a6b029ec45ab8f2602dafdf",
+      "size": 6015
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/commands/__init__.py",
+      "sha256": "c5e0a9308981be9c79dfefc3a433ab66a13018a2ad4e06cf5bf0e90735d54680",
+      "size": 749
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/commands/contracts.py",
+      "sha256": "e9ad61e54a9809393552039cad69526e660501ac3b8ef3f709ca2ac3d301115d",
+      "size": 12962
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/commands/router.py",
+      "sha256": "cab8d15019f24a9e20d2579201a815760cc589ab24e7038cbbd71ea522efb0b3",
+      "size": 2514
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/commands/service.py",
+      "sha256": "434ab51b3ca25a84a032cf22b91d162eb01290e676994f99ee148a08a7bf424a",
+      "size": 17995
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/execution/__init__.py",
+      "sha256": "a82a528ea226d6d3bd4f883deb1e692e446cb07c06071f0dee9ee1736f982684",
+      "size": 1118
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/execution/assembly.py",
+      "sha256": "6a1555948e028a299534a21e4ec2e9fe51f54d0843d9de42024a8d2b94f70d74",
+      "size": 8886
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/execution/configuration.py",
+      "sha256": "f3565a602f451b10ab87e546509bc698b4a46891c5f8fa85ee7c55c0ec8981e3",
+      "size": 3120
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/execution/contracts.py",
+      "sha256": "1738b74d1c69551ea8b0ba6f23b1bab605fd3f2f9a55d66df1dbc82d301e3f84",
+      "size": 3553
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/execution/dispatcher.py",
+      "sha256": "931ca520e9a4cdc8b319354aaeb21012c31a3e172c3ded1bceb4d2abceec2c3f",
+      "size": 4831
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/execution/fence.py",
+      "sha256": "dfa3b9aca770aef0387f99a1ee212a85aee84fdfab14511ef99bbe566d71cb04",
+      "size": 1057
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/execution/repository.py",
+      "sha256": "5ea780de44c5c0dd7ade52a860aaf6cdc797311e7c4342ff057f7814173c7c56",
+      "size": 3294
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/execution/worker.py",
+      "sha256": "f216abb0f09aa821f7ea5ce90a7dd1960dc223157ce577546a57becda16f2138",
+      "size": 11153
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/overview/__init__.py",
+      "sha256": "1e370e79e4fbf3e2502e3f7e5b24b121cac8e499b9ffb742346285f148c9b157",
+      "size": 1008
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/overview/contracts.py",
+      "sha256": "39dc439c7953a31d62b0d38816412989ea3c31aeb761dffaa130669b3cb93664",
+      "size": 2892
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/overview/router.py",
+      "sha256": "9847c6437957b59de1b33f70c32d1462df74bd66001cc8567664394075c2b6e9",
+      "size": 1372
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/overview/service.py",
+      "sha256": "90b2c90b09c27f2175fa9421e1af351a56919cd0dac72895d265dffbbd0ae48a",
+      "size": 16609
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/runs/__init__.py",
+      "sha256": "292da646f91ac0fb2ad3c84ea14ed265a992d3ea336112f7b3216dc853ff8772",
+      "size": 1067
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/runs/contracts.py",
+      "sha256": "327fa1342c9d305594d5b1573dfc645f0652930dc2bac96fb0291ce38f9039c2",
+      "size": 5384
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/runs/router.py",
+      "sha256": "5cd282bbd4d40784ec1bc6f0dd541dfe4d976537fa1a368cae5d1b60f212e6a4",
+      "size": 6087
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/runs/service.py",
+      "sha256": "107616e70b184bb9888bef55506040eae19d521af03ae26c411e9e161fe2e019",
+      "size": 16814
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/usage/contracts.py",
+      "sha256": "98cda8c9c93bb8811ba93492ed65ea4ee389605caf1afbf0b6cc778f2201bb09",
+      "size": 3913
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/usage/read_service.py",
+      "sha256": "8dfbb1f23c714006a4b8e5e419ad21704affe3299ea90fb0be1601c4cc4af8ae",
+      "size": 9832
+    },
+    {
+      "path": "web_app/backend/atlas_platform/features/workflows/usage/service.py",
+      "sha256": "ee3f60875551ab9ca0aaa60069f88e57b62ad676887747d1ad662df7105b126a",
+      "size": 6925
+    },
+    {
+      "path": "web_app/backend/atlas_platform/frontend.py",
+      "sha256": "e34cfd8060fea868de1b0d24d923a94b62a21aa62ec68f4cb227ec54c89df2af",
+      "size": 6488
+    },
+    {
+      "path": "web_app/backend/atlas_platform/integrations/__init__.py",
+      "sha256": "6a10dff9451800e943ed4bfa8cc75ba1fa90dc99503242a86c1fe5c50969dbd6",
+      "size": 42
+    },
+    {
+      "path": "web_app/backend/atlas_platform/integrations/agents/__init__.py",
+      "sha256": "e53b94a44534848b78564a4b6c52d7977be1785167f73e16b7bbd9cf12d667f9",
+      "size": 318
+    },
+    {
+      "path": "web_app/backend/atlas_platform/integrations/agents/adapters.py",
+      "sha256": "beebf69bf8b6dd75a6d2ecf1fab04e48db58a70bc009d7d14b03f75a36c799fb",
+      "size": 22540
+    },
+    {
+      "path": "web_app/backend/atlas_platform/integrations/agents/anthropic_model.py",
+      "sha256": "0b981729f4f11553062e499f6282d11cc88d61b340625fc6700417d4b22610ba",
+      "size": 15485
+    },
+    {
+      "path": "web_app/backend/atlas_platform/integrations/agents/composition.py",
+      "sha256": "43b050fca6948a87424237b5afeff22a65b6244fd6b32a1882947b83a37ccd32",
+      "size": 23577
+    },
+    {
+      "path": "web_app/backend/atlas_platform/integrations/agents/configuration.py",
+      "sha256": "9244dd2da5874c81fb3328038605dd8704e55e77911d63853c177cc8da467ef3",
+      "size": 15043
+    },
+    {
+      "path": "web_app/backend/atlas_platform/integrations/agents/fake_dimensional.py",
+      "sha256": "ad09b771eaf454429b5266e951f447e72e8289ec7cb7b54b1e4b98bc0b28157f",
+      "size": 4171
+    },
+    {
+      "path": "web_app/backend/atlas_platform/integrations/agents/fake_logical.py",
+      "sha256": "025af2b30e7b337d25c2c4cdd8bf76aac47e22b25adedec886524111078376b4",
+      "size": 3643
+    },
+    {
+      "path": "web_app/backend/atlas_platform/integrations/agents/fake_mapping.py",
+      "sha256": "a4f23fffc8cc31bdcae9c68b517183e7e30cd6cdd556e0f467d1d02c2ae781bb",
+      "size": 10301
+    },
+    {
+      "path": "web_app/backend/atlas_platform/integrations/agents/fake_shared.py",
+      "sha256": "3d6b1c689a63cc2e7f055652eda84dfff133a5f27e58e7fb4bbb8b43c7af9f7a",
+      "size": 21722
+    },
+    {
+      "path": "web_app/backend/atlas_platform/integrations/agents/fake_subject_areas.py",
+      "sha256": "8988e29ead4e0f9aa0d271283b7dc21b36cfc3ab764c599abc786ca972c61f30",
+      "size": 1180
+    },
+    {
+      "path": "web_app/backend/atlas_platform/integrations/agents/usage.py",
+      "sha256": "50c0d7e7362930343bd663890b688df653a7f17a14b8f4a774e29d734118169a",
+      "size": 9550
+    },
+    {
+      "path": "web_app/backend/atlas_platform/integrations/databricks/__init__.py",
+      "sha256": "4e0aaee216cf955f8384707de85d62a7b8eb37fb7ee0f7a500d18b149d32df5b",
+      "size": 415
+    },
+    {
+      "path": "web_app/backend/atlas_platform/integrations/databricks/runtime.py",
+      "sha256": "7fb8730d497861b8d6a26d3e930ec7f869c036841d5977a9fb081546a43df368",
+      "size": 3321
+    },
+    {
+      "path": "web_app/backend/atlas_platform/main.py",
+      "sha256": "536b4bdb7183792496b458e7d1dd8d3eb2ac118f514762c2672b3c3a56bb7e4f",
+      "size": 19477
+    },
+    {
+      "path": "web_app/backend/atlas_platform/prompt_rendering.py",
+      "sha256": "cac0a62757f0f3631a8e13319e6e74525b871d94dedd192adb4789575632c8ab",
+      "size": 9137
+    },
+    {
+      "path": "web_app/backend/atlas_platform/runtime.py",
+      "sha256": "d1abb780cedb8a6df2c6d0c31daeb23497a5b35ca4eae5cb9add976d930d6d7a",
+      "size": 12950
+    },
+    {
+      "path": "web_app/backend/atlas_platform/runtime_diagnostics.py",
+      "sha256": "484e9d8a21063cb536108c3bf6a29c50664c19171ec6e90b3af16d58a92fe42a",
+      "size": 6991
+    },
+    {
+      "path": "web_app/backend/atlas_platform/workflow_worker.py",
+      "sha256": "81bed7e751ea64dff7aba2d69f1092412dce0af1a0710a9cdbf475bc0e21edce",
+      "size": 10168
+    },
+    {
+      "path": "web_app/backend/pyproject.toml",
+      "sha256": "26085130338c787af19d804b162cf4c326686e172ccfdbe7249988b3967a9eab",
+      "size": 1643
+    },
+    {
+      "path": "web_app/frontend/index.html",
+      "sha256": "44aa274a9617209b8b2f89f40a2ca34558544393185c6c87c4fa6e43871c0373",
+      "size": 518
+    },
+    {
+      "path": "web_app/frontend/package.json",
+      "sha256": "eb0ea538f97f42282e56cd2daf6c1a779dfae22054a38cb9d95f17e1dc7e800b",
+      "size": 1046
+    },
+    {
+      "path": "web_app/frontend/public/assets/atlas-favicon.svg",
+      "sha256": "7d49315f59d042d65e47596daccd14a5d90bffccd23362755b958f32c4d7b5c9",
+      "size": 315
+    },
+    {
+      "path": "web_app/frontend/public/assets/atlas.svg",
+      "sha256": "6eb61b92f471c954f2334460c6a8b4f2cb04475c559b766f6f9a03bd46f70e98",
+      "size": 265
+    },
+    {
+      "path": "web_app/frontend/public/assets/fonts/OFL.txt",
+      "sha256": "fbbbcfef55318de350562559b671360de6d597112ecc5c73881b05092db89602",
+      "size": 4389
+    },
+    {
+      "path": "web_app/frontend/public/assets/fonts/OpenSans-Regular.woff2",
+      "sha256": "9d01f601f488af29f37b52aaa17d10266d8182759167e5c790ee1c926fce50f4",
+      "size": 59604
+    },
+    {
+      "path": "web_app/frontend/public/assets/fonts/OpenSans-SemiBold.woff2",
+      "sha256": "6d5307482781eddc412d76bd0fcebcf93b440dd32db31641d1fa53b81e69e4c1",
+      "size": 59520
+    },
+    {
+      "path": "web_app/frontend/public/assets/fonts/OpenSans_Condensed-Bold.woff2",
+      "sha256": "e45f84d4228ec2192ec1b565a09bd030fc1e52ae709ee29338054189b44767eb",
+      "size": 58756
+    },
+    {
+      "path": "web_app/frontend/src/api.ts",
+      "sha256": "02cb50fcaf8c43ce009eecd86c42beee55ba8f485f77e6a7423446aee3808963",
+      "size": 8398
+    },
+    {
+      "path": "web_app/frontend/src/app.tsx",
+      "sha256": "49bf02480994c2c14cc82179ead5b4671ed944973c1713bcedfa773d9f9e978f",
+      "size": 51666
+    },
+    {
+      "path": "web_app/frontend/src/app/TenantRouteFrame.tsx",
+      "sha256": "407e46afb78d66e7f7eabba509468d73ec8d0c843c5474ce1c7cd78723874899",
+      "size": 1377
+    },
+    {
+      "path": "web_app/frontend/src/app/TenantWorkspace.tsx",
+      "sha256": "40ce8dc330303a453e5ad336e6c17063dc8649a462d183191597b4734cd485ce",
+      "size": 5793
+    },
+    {
+      "path": "web_app/frontend/src/core/http.ts",
+      "sha256": "51d01c2267df9ec1c4b7e6f180b5fba4b7151d1b58019873eebe922cad1b2511",
+      "size": 2989
+    },
+    {
+      "path": "web_app/frontend/src/features/analysis/AnalysisResults.tsx",
+      "sha256": "8d0e95832c85658552fff30a476e7e859a9c6e73e9aac97233935efd28ad17df",
+      "size": 14538
+    },
+    {
+      "path": "web_app/frontend/src/features/analysis/AnalysisScreen.tsx",
+      "sha256": "26b799f2c228c3db238144da718c5bf59b961d3aa136590b75320d54dbecba45",
+      "size": 10431
+    },
+    {
+      "path": "web_app/frontend/src/features/analysis/api.ts",
+      "sha256": "3bbd6ed9ebaa4635bfba0012d5569270c66b34a2154677573dcf72613acac2c6",
+      "size": 6938
+    },
+    {
+      "path": "web_app/frontend/src/features/code_generation/CodeGenerationLedger.tsx",
+      "sha256": "980c836b0657317da02549a5439c677bf9bf96f82701d1f63f915f71d4140b13",
+      "size": 13482
+    },
+    {
+      "path": "web_app/frontend/src/features/code_generation/CodeGenerationRunDialog.tsx",
+      "sha256": "2b0a4439d09620c1ff23e32b891a5f67032ea11e0ef72dd179d7bc82f0089268",
+      "size": 16485
+    },
+    {
+      "path": "web_app/frontend/src/features/code_generation/CodeGenerationScreen.tsx",
+      "sha256": "845ae00ee875fa4a420563e69ec01a2fe7fd266cb58e1743de5097134a1918e4",
+      "size": 10258
+    },
+    {
+      "path": "web_app/frontend/src/features/code_generation/CodeMappingWarnings.tsx",
+      "sha256": "d32295dc7532de0973faa93ae775354af63b8de5f56d8701790b71dc92220982",
+      "size": 1213
+    },
+    {
+      "path": "web_app/frontend/src/features/code_generation/GeneratedSqlDetail.tsx",
+      "sha256": "b8d0d34f9e17b1f5bd080f90c37d7f9dcd72616f5a9f0507fa2752a3ad430d4c",
+      "size": 10279
+    },
+    {
+      "path": "web_app/frontend/src/features/code_generation/api.ts",
+      "sha256": "dddca53304d213436c6a6621c958e06f04011ef34482b3952e3d1f2a3f561eed",
+      "size": 7178
+    },
+    {
+      "path": "web_app/frontend/src/features/context/ContextDetail.tsx",
+      "sha256": "b934b239dc14296e53ede54e93e30b495284676a2b8a3296e7dde48c30d4f99a",
+      "size": 12253
+    },
+    {
+      "path": "web_app/frontend/src/features/context/ContextEditor.tsx",
+      "sha256": "8c89ddbbde9eb3a1f6f5184f04b83e5f671d999b09984dad6f9ac5fb062f614c",
+      "size": 10928
+    },
+    {
+      "path": "web_app/frontend/src/features/context/ContextLedgers.tsx",
+      "sha256": "79ecdfd4ed8ddfd7b2ca422a9bcebf9954485569d76370f1e864685a88333c0f",
+      "size": 10998
+    },
+    {
+      "path": "web_app/frontend/src/features/context/ContextScreen.tsx",
+      "sha256": "04d9e7b5d5f995ce6f525f1817c60ae25f4f42a4ea33d58c25bc604439e6e24d",
+      "size": 4374
+    },
+    {
+      "path": "web_app/frontend/src/features/context/api.ts",
+      "sha256": "d458f566c086d5afe17992e597a98aac8e1f5ce67c8643e371b144c717b5ee48",
+      "size": 8702
+    },
+    {
+      "path": "web_app/frontend/src/features/dimensional/DimensionalDetail.tsx",
+      "sha256": "8c0daa7d7e640e8eea626de41ed326dffb652dda8625311a3f81dba04f276d27",
+      "size": 15291
+    },
+    {
+      "path": "web_app/frontend/src/features/dimensional/DimensionalLedgers.tsx",
+      "sha256": "acce53281893e4c90d289dd8e7732541e72b00f574c46c3c15074e3c9014c9b1",
+      "size": 19808
+    },
+    {
+      "path": "web_app/frontend/src/features/dimensional/DimensionalScreen.tsx",
+      "sha256": "760fdeb9a6bae643560d3f1350d2ecb3ef3150ab71c3c8da642d76b0c49ddc4b",
+      "size": 13585
+    },
+    {
+      "path": "web_app/frontend/src/features/dimensional/api.ts",
+      "sha256": "05921167ff016143256df14849fff0cb6e136083d09a4abddcdf283ac26589cd",
+      "size": 12321
+    },
+    {
+      "path": "web_app/frontend/src/features/logical/LogicalDetail.tsx",
+      "sha256": "65429fdc8c403c11b7dcfe7a16fec334473f08901a81cb1c941c6f72589b1720",
+      "size": 13409
+    },
+    {
+      "path": "web_app/frontend/src/features/logical/LogicalLedgers.tsx",
+      "sha256": "9b4f346728348f854f7fb55d87483bd079a8e3532782b1cd761ac9aa278459f0",
+      "size": 19061
+    },
+    {
+      "path": "web_app/frontend/src/features/logical/LogicalScreen.tsx",
+      "sha256": "f00d2c6553b697e4001ee7b7b97f28f22188d174e1f00cc3955e4940441b3f09",
+      "size": 13376
+    },
+    {
+      "path": "web_app/frontend/src/features/logical/api.ts",
+      "sha256": "b17ad9409657905e9773facc1c767eaa774218476d27d3e1e341a20607217e1e",
+      "size": 11522
+    },
+    {
+      "path": "web_app/frontend/src/features/mapping/MappingAttributeDocuments.tsx",
+      "sha256": "f76b302f917b5fbc793c5e549c02de1143d2720846f0fe36026a4ea24d85919c",
+      "size": 5190
+    },
+    {
+      "path": "web_app/frontend/src/features/mapping/MappingDetail.tsx",
+      "sha256": "819f78fb22c1a02c670aed09ffe50b99ca11a7d62d405d3eccc4a0775f0f27bf",
+      "size": 11636
+    },
+    {
+      "path": "web_app/frontend/src/features/mapping/MappingDocumentView.tsx",
+      "sha256": "b52cd7abb052ccfd41b5b4a8f3dadb01a8ee252a93effe4e204d45cfb5d9d2dc",
+      "size": 4296
+    },
+    {
+      "path": "web_app/frontend/src/features/mapping/MappingEditor.tsx",
+      "sha256": "fbb0d6f3663f65521da2f27c929285b1ee2a2e1d4beee9445282be5fe2c72904",
+      "size": 17695
+    },
+    {
+      "path": "web_app/frontend/src/features/mapping/MappingExportDialog.tsx",
+      "sha256": "8a788b67ab1236c43e67494d29c923d7530b75bb73b099da7ac31d0c3361ad18",
+      "size": 3841
+    },
+    {
+      "path": "web_app/frontend/src/features/mapping/MappingLedgers.tsx",
+      "sha256": "0a0856a6b955951b1a7f8b45a63b67060c1a1de2cef180dadb6a2530faeb31a3",
+      "size": 15884
+    },
+    {
+      "path": "web_app/frontend/src/features/mapping/MappingLogicDocument.tsx",
+      "sha256": "f908ed438759024416dae0ea4d357b058a69c9f28a05fda8bcc2f3cdc8a956f8",
+      "size": 2001
+    },
+    {
+      "path": "web_app/frontend/src/features/mapping/MappingObjectAttributes.tsx",
+      "sha256": "62d098e4dccf6e91e953d410ff167b10e61cea8e9efd204fbdcc472e7e4eb469",
+      "size": 4326
+    },
+    {
+      "path": "web_app/frontend/src/features/mapping/MappingOutputTemplateSelection.tsx",
+      "sha256": "7caee50bdd1325ba2408ff6065c838563c097d31952d4243674229e4feba294c",
+      "size": 3165
+    },
+    {
+      "path": "web_app/frontend/src/features/mapping/MappingRunDialog.tsx",
+      "sha256": "c80d53bf38e8b48fc287921cb4755145104f7f7d8246441b96be64fa219eb82e",
+      "size": 22609
+    },
+    {
+      "path": "web_app/frontend/src/features/mapping/MappingScreen.tsx",
+      "sha256": "c76b2971f7db735bda4c73107226ff7583d2d07a3266bbb211b9c62adea430e9",
+      "size": 11810
+    },
+    {
+      "path": "web_app/frontend/src/features/mapping/api.ts",
+      "sha256": "cf458bba793c1e53bd6b47ce0c666676bc066d29352130e7a4b49c7951cc0446",
+      "size": 14862
+    },
+    {
+      "path": "web_app/frontend/src/features/mapping/mapping-ledger.css",
+      "sha256": "ea3155bb0befa0143923e6ac3bfb996ba1dd67ca56da204e2c7190c0c7fab414",
+      "size": 14849
+    },
+    {
+      "path": "web_app/frontend/src/features/metadata/MetadataChangeSetPanel.tsx",
+      "sha256": "64f9ffdd38bea87d372de38812cc665846449e360077f9b43d47a55acb841074",
+      "size": 12166
+    },
+    {
+      "path": "web_app/frontend/src/features/metadata/MetadataExportDialog.tsx",
+      "sha256": "599fbae54792796b181c571f7520a4593c864bcc95f2e61b0f3859ac6d4693e1",
+      "size": 5115
+    },
+    {
+      "path": "web_app/frontend/src/features/metadata/MetadataLedger.tsx",
+      "sha256": "599ca5a0db6f50c5214c93c2bdb2e44887a9fcac3a2478a83fce7c0b65941839",
+      "size": 3233
+    },
+    {
+      "path": "web_app/frontend/src/features/metadata/MetadataScreen.tsx",
+      "sha256": "5d909e62b155f1d3a8a7c65edc3474e05a52578e49a7662ce41a89e66a332fc4",
+      "size": 14559
+    },
+    {
+      "path": "web_app/frontend/src/features/metadata/PhysicalMetadataScreen.tsx",
+      "sha256": "7862eb2f30a4f7e90e3bfdea29d183f3a69b841c3145b49f57f23efb76a90db6",
+      "size": 16396
+    },
+    {
+      "path": "web_app/frontend/src/features/metadata/api.ts",
+      "sha256": "e4c5392c1f5bffaf485182f13fded833abde64b98a171dfe09a16a0aeeaac544",
+      "size": 16582
+    },
+    {
+      "path": "web_app/frontend/src/features/metadata_enrichment/EnrichmentAttributeSelection.tsx",
+      "sha256": "b48f45fdb2ac61ae1c6c6d3e445bf5aa9efcc55bfd80804c3bdb1695f0b9f5b9",
+      "size": 17516
+    },
+    {
+      "path": "web_app/frontend/src/features/metadata_enrichment/MetadataEnrichmentResults.tsx",
+      "sha256": "f6b535525c4b00a2bf3d7747c39967411364e3805ab8ddcf31feb6f3aee30b30",
+      "size": 6590
+    },
+    {
+      "path": "web_app/frontend/src/features/metadata_enrichment/MetadataEnrichmentScreen.tsx",
+      "sha256": "b4829ccf927bc65480ee01c02eb9c78bdb68dec8952cca90af664c1dbdb33964",
+      "size": 31700
+    },
+    {
+      "path": "web_app/frontend/src/features/metadata_enrichment/api.ts",
+      "sha256": "508ab426956561a4fad35b83c756865ae6befddedcccaf4edf983369df53a512",
+      "size": 5091
+    },
+    {
+      "path": "web_app/frontend/src/features/profiling/ProfilingDetail.tsx",
+      "sha256": "a8749cbe36ecddd05c5fc69a7ee4947435b5546c34517f086d7b9102467526ed",
+      "size": 7257
+    },
+    {
+      "path": "web_app/frontend/src/features/profiling/ProfilingResults.tsx",
+      "sha256": "70140ccf93624042f3be1294b4cbfe9f6915ccaf267c9e6208ea4e6792e9e64b",
+      "size": 6919
+    },
+    {
+      "path": "web_app/frontend/src/features/profiling/ProfilingRunConfiguration.tsx",
+      "sha256": "613d91f6ec0acbd66fce2a522d69be7b7d54825a4a3821d02757bd864409328e",
+      "size": 9761
+    },
+    {
+      "path": "web_app/frontend/src/features/profiling/ProfilingRuns.tsx",
+      "sha256": "ca4f5279144dec49c11a4f778ce59537ad5ae6dc49371aa94dcdbc5160690604",
+      "size": 12889
+    },
+    {
+      "path": "web_app/frontend/src/features/profiling/ProfilingScreen.tsx",
+      "sha256": "9606ff440aa715e420ff1287da94c602743c661b0116f7cf490511c8915180c9",
+      "size": 8685
+    },
+    {
+      "path": "web_app/frontend/src/features/profiling/api.ts",
+      "sha256": "74dd23e2460733dc6a615bb14c6efa72f682a71dcfa4debab3d9de0fd5e16e80",
+      "size": 7391
+    },
+    {
+      "path": "web_app/frontend/src/features/profiling/shared.tsx",
+      "sha256": "5e898cfc17982f3c54585747a6005bace3e7d2f351aab3cb5d8075658cc729e2",
+      "size": 2905
+    },
+    {
+      "path": "web_app/frontend/src/features/profiling/useProfilingRunEvents.ts",
+      "sha256": "c21e1c2f2751edca2fe225f5058873a45a930d72c8c9a5da7bdbfd01052b89cc",
+      "size": 1493
+    },
+    {
+      "path": "web_app/frontend/src/features/project_input_scope/AddScopeDialog.tsx",
+      "sha256": "619728f493b4a7e241c44ebede628c32aae17c9eb530a3ab91ae8dfc9ca8dd38",
+      "size": 9236
+    },
+    {
+      "path": "web_app/frontend/src/features/project_input_scope/ProjectInputScopeScreen.tsx",
+      "sha256": "e6c24d83ad80f1f37a4985b14eb1c14f5a2742b842355a07976fca36aa5b50ca",
+      "size": 19270
+    },
+    {
+      "path": "web_app/frontend/src/features/project_input_scope/api.ts",
+      "sha256": "4ec79ba1a12f1de086d4e3adb1896e5e9545eb715664d0e20b3bf5b43bb23a07",
+      "size": 4992
+    },
+    {
+      "path": "web_app/frontend/src/features/project_input_scope/scopeFilterChoices.tsx",
+      "sha256": "f086231658b89bba05bc507f465460ced39c4b1608dd4e36cbe233761480b6cf",
+      "size": 2555
+    },
+    {
+      "path": "web_app/frontend/src/features/project_record_review/ProjectLayerActions.tsx",
+      "sha256": "15b33c68133ec2a91e986f782f5453d5699333b3249c847e89af394df984f251",
+      "size": 1687
+    },
+    {
+      "path": "web_app/frontend/src/features/project_record_review/ProjectRecordEditor.tsx",
+      "sha256": "092441631c907c282f6a249145af2c445dd74ef96d98126a13cd5d0d9129b572",
+      "size": 10277
+    },
+    {
+      "path": "web_app/frontend/src/features/project_record_review/ProjectRecordHistory.tsx",
+      "sha256": "3d1f83c19d40b834bf2fb6e14ab8ae6f4510dd4930cd877437d5f906afde6bb1",
+      "size": 4523
+    },
+    {
+      "path": "web_app/frontend/src/features/project_record_review/ProjectRecordReview.tsx",
+      "sha256": "674229f2cbe7de830ac3e24ccb6f4e2563bddd19ff29a3d80b0aeabea4d6ffae",
+      "size": 21279
+    },
+    {
+      "path": "web_app/frontend/src/features/project_record_review/api.ts",
+      "sha256": "2fe2fc1f2591006a4f901b9769cc00953758d7ea570d976bd9cb978e3422af15",
+      "size": 5996
+    },
+    {
+      "path": "web_app/frontend/src/features/project_record_review/project-review.css",
+      "sha256": "1ed35e982ed6f2cbe1e68ec25f165cd7e3c38a94989c5ddc28a7034ae390e688",
+      "size": 1967
+    },
+    {
+      "path": "web_app/frontend/src/features/project_record_review/selection.tsx",
+      "sha256": "3cc1b6ff63456f50b6b73e0e6363b8b488cdc890fbb5c74a3fb19659b09dfb79",
+      "size": 1164
+    },
+    {
+      "path": "web_app/frontend/src/features/project_targets/DdlExportButton.tsx",
+      "sha256": "4a5fc0069ea380de414eac12a4bd95044178d6995a38a9ee508adf1d63d7644e",
+      "size": 1672
+    },
+    {
+      "path": "web_app/frontend/src/features/project_targets/TargetExportDialog.tsx",
+      "sha256": "8cb66f5b2e3751e0ee0cdcd3d73f48e0d8eba65a31271e68eb8ba898c48a4fdc",
+      "size": 4731
+    },
+    {
+      "path": "web_app/frontend/src/features/project_targets/api.ts",
+      "sha256": "aff263c02dd3b334efd1ee56eac27289e8ff57c620ac925394cdc84058fa418c",
+      "size": 3525
+    },
+    {
+      "path": "web_app/frontend/src/features/projects/CreateProjectDialog.tsx",
+      "sha256": "a8bb3db215dc09af0f86fba43f425eff2d21889c221993ef9cb985e5ed769f73",
+      "size": 1840
+    },
+    {
+      "path": "web_app/frontend/src/features/projects/EntityAttributes.tsx",
+      "sha256": "4eb61643ed6f4360c0b260e4084a2bc57d45c0da2268630b599b1e4985cfa0b2",
+      "size": 6578
+    },
+    {
+      "path": "web_app/frontend/src/features/projects/EntityQuickView.tsx",
+      "sha256": "80548095947e659daf43f8740425c313892e8360670f06fe7943c9a901021c8f",
+      "size": 7818
+    },
+    {
+      "path": "web_app/frontend/src/features/projects/EntitySubjectAreas.tsx",
+      "sha256": "b2ae51db4ccb52d0e2b866f7945b6ad2b3117bdf8c56336782d3a7ee6a7a6fdb",
+      "size": 994
+    },
+    {
+      "path": "web_app/frontend/src/features/projects/ModelSubjectAreas.tsx",
+      "sha256": "3ec57a1d5f53069ad19ddf0a521613a5d85f20d21c661735f4a10b2f2da5fc52",
+      "size": 10799
+    },
+    {
+      "path": "web_app/frontend/src/features/projects/ProjectForm.tsx",
+      "sha256": "b2122e5d2c53d97db9ac4d7135cf243aee02cb0a6acaeb6fe0f657426bb28086",
+      "size": 26944
+    },
+    {
+      "path": "web_app/frontend/src/features/projects/ProjectLockControl.tsx",
+      "sha256": "aa234841d9bb18833747064ab4599f90d9a1a1549095881ff52769e6f51b0fa7",
+      "size": 2216
+    },
+    {
+      "path": "web_app/frontend/src/features/projects/ProjectOverviewScreen.tsx",
+      "sha256": "26f40d1f69a881ffa884e54008b193907f101c24684653295e286e8486d8d8e0",
+      "size": 10182
+    },
+    {
+      "path": "web_app/frontend/src/features/projects/ProjectRouteFrame.tsx",
+      "sha256": "d2cd10737fdf70269de69836ad36bb4a0f32ec78d4c1efecaafd0f02207cd30b",
+      "size": 2469
+    },
+    {
+      "path": "web_app/frontend/src/features/projects/ProjectSettingsScreen.tsx",
+      "sha256": "5613c02cd8f41b0b2330878d055f6746d6dd0dcbb22c2c333b2ca2e0a4cffcbb",
+      "size": 6023
+    },
+    {
+      "path": "web_app/frontend/src/features/projects/ProjectWorkspaceShell.tsx",
+      "sha256": "ca0ada6b83d9c8eb332262738c6725f7bce38069709d931fbd66a57fa98db71d",
+      "size": 11784
+    },
+    {
+      "path": "web_app/frontend/src/features/projects/ProjectsLedgerScreen.tsx",
+      "sha256": "b91796cf71dfa83a0ea9fdf02256a658150e95daab872e3303ccb7352620e3f8",
+      "size": 7864
+    },
+    {
+      "path": "web_app/frontend/src/features/projects/SourceMappings.tsx",
+      "sha256": "4230896ac76a9b645ac7e1eba10beda1d688337f58691674604d6f9e24878029",
+      "size": 3614
+    },
+    {
+      "path": "web_app/frontend/src/features/projects/WorkflowProjects.tsx",
+      "sha256": "2bbfde0e9db88909665e397ac8ff2e1714344fa6e646fef38f996c80db2f6bf1",
+      "size": 6318
+    },
+    {
+      "path": "web_app/frontend/src/features/projects/api.ts",
+      "sha256": "cc8c0d7306737b0bedbabbcb25c18a2f80f7f937a6789a607f755c8fdddbeb79",
+      "size": 7082
+    },
+    {
+      "path": "web_app/frontend/src/features/projects/project-schemas.css",
+      "sha256": "e13a1629ea79b0ca8d0604c815a4e8b38beba2a2adfee6b9f3fa879ffcebe9e2",
+      "size": 1953
+    },
+    {
+      "path": "web_app/frontend/src/features/prompts/ProjectPromptSettings.tsx",
+      "sha256": "3e752d6898a42f1d083294709e12fcc6ffe6f7aadaa951c59d01ad557863e142",
+      "size": 15859
+    },
+    {
+      "path": "web_app/frontend/src/features/prompts/PromptTemplateDetail.tsx",
+      "sha256": "b706575d7038416156d7139e006b8d924c8c70e06237d52099db29de696c2fea",
+      "size": 27138
+    },
+    {
+      "path": "web_app/frontend/src/features/prompts/PromptTemplateDialogs.tsx",
+      "sha256": "973e4bf9086a41f4960408cbb94b302382245cfc0cc54f1af0bbd8085c193227",
+      "size": 16755
+    },
+    {
+      "path": "web_app/frontend/src/features/prompts/PromptTextEditor.tsx",
+      "sha256": "56fcb5b709e395846f63084d926b5a47bcb66d8cc75fe25fba66d524aab98568",
+      "size": 2585
+    },
+    {
+      "path": "web_app/frontend/src/features/prompts/PromptTools.tsx",
+      "sha256": "d526693eb08bda20a84fdb68a850ce395c49af7a05e1cde86423f5fda5c6e2c8",
+      "size": 2874
+    },
+    {
+      "path": "web_app/frontend/src/features/prompts/PromptVariables.tsx",
+      "sha256": "03955bcc48270a738524fdb6e7d0507bc28eb795550a38c39ad8d2cdd361022c",
+      "size": 4703
+    },
+    {
+      "path": "web_app/frontend/src/features/prompts/PromptsLedger.tsx",
+      "sha256": "2fb78053631f0e0df7670a4ddbe8243b8d4beb73afcb06cc71b83f8093e6f488",
+      "size": 6058
+    },
+    {
+      "path": "web_app/frontend/src/features/prompts/PromptsScreen.tsx",
+      "sha256": "468b651034e345850ff5172afdafa21e9178b00221e408d1d19d15f78f9de3b3",
+      "size": 13080
+    },
+    {
+      "path": "web_app/frontend/src/features/prompts/api.ts",
+      "sha256": "0008eb1fa880dbb2d23015d8df803821533c608f80d621d060c7193f57f1639c",
+      "size": 14533
+    },
+    {
+      "path": "web_app/frontend/src/features/subject_areas/SubjectAreaDetail.tsx",
+      "sha256": "d7bb2792614180194ac77620fe1d7549521115141b48f610b131047512391e52",
+      "size": 12252
+    },
+    {
+      "path": "web_app/frontend/src/features/subject_areas/SubjectAreaDialogs.tsx",
+      "sha256": "f11b19ddbd45cf9b3d730e6a1e836184315fbebd0c7bf5a77678b586133b33fc",
+      "size": 22760
+    },
+    {
+      "path": "web_app/frontend/src/features/subject_areas/SubjectAreasScreen.tsx",
+      "sha256": "a7ea730d416ad92c3d748422625cd5ac3e090aee4e8fa06d5b69d2b6d4d1bfae",
+      "size": 17535
+    },
+    {
+      "path": "web_app/frontend/src/features/subject_areas/api.ts",
+      "sha256": "1995cc1fb17b1a91d5ee81d0f5d20c886100ca1d837a5c962e8b6cdae377496c",
+      "size": 4716
+    },
+    {
+      "path": "web_app/frontend/src/features/subject_areas/subject-areas.css",
+      "sha256": "df8c703bca1db62662f94d0b8a323536f4c002e30f06f16ddc5400a1773b2b54",
+      "size": 6179
+    },
+    {
+      "path": "web_app/frontend/src/features/tenant_locks/TenantLockControl.tsx",
+      "sha256": "0f87199438084e6d7db54a15033a95f354a639046514f2dae008c7c66642abf8",
+      "size": 1941
+    },
+    {
+      "path": "web_app/frontend/src/features/tenant_locks/TenantLockFocus.tsx",
+      "sha256": "4965df89a8338e66b7ae81cca5e587a54c3fbe0ce1508d120a97a339697ce618",
+      "size": 16801
+    },
+    {
+      "path": "web_app/frontend/src/features/tenant_locks/api.ts",
+      "sha256": "4edc819f1d74494660e9770d834bccc32404201a902c8512e5743a9392527391",
+      "size": 7668
+    },
+    {
+      "path": "web_app/frontend/src/features/tenants/TenantEntryScreen.tsx",
+      "sha256": "b3a9a96a12e16b3c5e9fc2aa021669a19685498093edeff6a2f882b36bc5e923",
+      "size": 6757
+    },
+    {
+      "path": "web_app/frontend/src/features/tenants/TenantHomeScreen.tsx",
+      "sha256": "0e910af46d33e0f65d95723f9e4fa40e8a0233af93c737a42617e683aa1a7e34",
+      "size": 3914
+    },
+    {
+      "path": "web_app/frontend/src/features/tenants/api.ts",
+      "sha256": "10276f3e8e8b4c405f73656fae04d2efe7a6e627a66eb7450afe83c10845d681",
+      "size": 1882
+    },
+    {
+      "path": "web_app/frontend/src/features/tenants/presentation.ts",
+      "sha256": "025318a60b5062b0ffbe993440c639a06782756699b89d20a18e93ec2466b2b2",
+      "size": 467
+    },
+    {
+      "path": "web_app/frontend/src/features/validation/ValidationInspector.tsx",
+      "sha256": "b2446802328a6745e864827915147e3ef1f588a46533b92562f2e67f469c830a",
+      "size": 1817
+    },
+    {
+      "path": "web_app/frontend/src/features/validation/ValidationLedger.tsx",
+      "sha256": "78554f383dd5afc741cc9c3e9be99be8eb12d6cf8d7d9e2438072724b5651fb1",
+      "size": 15031
+    },
+    {
+      "path": "web_app/frontend/src/features/validation/ValidationRunDialog.tsx",
+      "sha256": "a83be602b76f9400cd7a17e03dfe58f884adc2b8d812c28526a510bca823345e",
+      "size": 15164
+    },
+    {
+      "path": "web_app/frontend/src/features/validation/ValidationScreen.tsx",
+      "sha256": "8a80a54a3d3993606904cb26bb5468870d42f7b22eccd5812089b2130036fb2e",
+      "size": 13028
+    },
+    {
+      "path": "web_app/frontend/src/features/validation/api.ts",
+      "sha256": "1cb46c21cbdf726026a3b9991112a13f1141565eb499dbe56b316693e3228fe3",
+      "size": 4152
+    },
+    {
+      "path": "web_app/frontend/src/features/workflows/CancelWorkflowRun.tsx",
+      "sha256": "ac274d35f1f9382e755182e2a084a63b8f256fd8a82209ca1d558bfb6ea9717b",
+      "size": 1802
+    },
+    {
+      "path": "web_app/frontend/src/features/workflows/FailedWorkflowDraft.tsx",
+      "sha256": "3d5e5aa6ed5fdc8c3f1b70445343fc2c5932ea6d83a8d4666384f5badcb93fc7",
+      "size": 7132
+    },
+    {
+      "path": "web_app/frontend/src/features/workflows/WorkflowCommandCenter.tsx",
+      "sha256": "6e821d0a97aa05e145f2118b4e5a04c346ced5d2359aafb50d790de026ba7540",
+      "size": 5017
+    },
+    {
+      "path": "web_app/frontend/src/features/workflows/WorkflowRunDialog.tsx",
+      "sha256": "e5c4b9e5c3996dada203b6eaed060eb95a26ddbf3eb0f014cb23b6b0aa04813b",
+      "size": 39783
+    },
+    {
+      "path": "web_app/frontend/src/features/workflows/WorkflowRunMonitor.tsx",
+      "sha256": "74b77c2eec5663a8279038900017824907176caac09076ff56d221497d766cd9",
+      "size": 44460
+    },
+    {
+      "path": "web_app/frontend/src/features/workflows/WorkflowTokenUsage.tsx",
+      "sha256": "3112907db5a25d8c3663e8a58a5ad1e6ace1388361017d40cf2f90fa7f77a559",
+      "size": 5329
+    },
+    {
+      "path": "web_app/frontend/src/features/workflows/api.ts",
+      "sha256": "50c8a9320740c39cc385a62ca57e617fe1097ad7d407319feb0bafb8ee4d15ab",
+      "size": 27286
+    },
+    {
+      "path": "web_app/frontend/src/features/workflows/presentation.tsx",
+      "sha256": "f4b2d12a5e0eed88d2bd9ea141953f65e5db9902d6735b908d5afa6c88407349",
+      "size": 5062
+    },
+    {
+      "path": "web_app/frontend/src/features/workflows/useWorkflowRunSubmission.ts",
+      "sha256": "333aabab60c95190688ace8708ea473f7f1ff5bbc632a1557dcf826e2d06eed2",
+      "size": 1856
+    },
+    {
+      "path": "web_app/frontend/src/main.tsx",
+      "sha256": "f5645af34d42d33573970d2b43615fb7ef0481d0c27d517088a57f22f16c3d56",
+      "size": 513
+    },
+    {
+      "path": "web_app/frontend/src/shared/MultiSelectField.tsx",
+      "sha256": "ddf8dba0a56fa9714462911841a4cd69baa2cae44928a27744034b91b2742dbf",
+      "size": 3426
+    },
+    {
+      "path": "web_app/frontend/src/shared/NormalizedJson.tsx",
+      "sha256": "04cc364786c3632b804ef08b97cca44f9be5d5374691fc456edf771a5ece38e6",
+      "size": 1519
+    },
+    {
+      "path": "web_app/frontend/src/shared/ProjectLayerTabs.tsx",
+      "sha256": "bdc06d36d6cf1c9e03716a048a1652af2c8d04acc0a1fa269c110624aab39135",
+      "size": 1332
+    },
+    {
+      "path": "web_app/frontend/src/shared/SidePanel.tsx",
+      "sha256": "e91b01b377101fb22abcfdb5ee49473f0f8969d854c58cc55aa33ed581122f4e",
+      "size": 1860
+    },
+    {
+      "path": "web_app/frontend/src/shared/archiveDownload.ts",
+      "sha256": "95c25ced9a99f13234b248536db50cbff9f3bfa001e2865b2f6b86d5b2d33c50",
+      "size": 2790
+    },
+    {
+      "path": "web_app/frontend/src/shared/contracts.ts",
+      "sha256": "0b45221ffb35fb17e15cc53f3cce33b86924de880e0a5376d7568d37baa788d1",
+      "size": 1378
+    },
+    {
+      "path": "web_app/frontend/src/shared/dialog.ts",
+      "sha256": "e6f54ab47c65c81aff8eb3f5ed3e45c95bf3b6741c2b222825067228688984bc",
+      "size": 1225
+    },
+    {
+      "path": "web_app/frontend/src/shared/presentation.ts",
+      "sha256": "19b0755004ee1d42884088b7b75e22a74a06e209add648f4cabe4a7ec8d20952",
+      "size": 937
+    },
+    {
+      "path": "web_app/frontend/src/shared/select-controls.css",
+      "sha256": "ebd3e0c338876c84f80688ac7295ad6cc2000e31a3c4e2be777e51159b6220a0",
+      "size": 4690
+    },
+    {
+      "path": "web_app/frontend/src/shared/ui.tsx",
+      "sha256": "bd02ead52aa72a624af3492b2c2f6c179a433dcbcea58c1d8c02e4ecf7943118",
+      "size": 8001
+    },
+    {
+      "path": "web_app/frontend/src/shared/useStoredBoolean.ts",
+      "sha256": "5822e4d8288de67d698c6e6b6a8a70c37a6577ff6aef5984e913e6ca3d539722",
+      "size": 696
+    },
+    {
+      "path": "web_app/frontend/src/styles.css",
+      "sha256": "3fea7d9b76d72b5dfc7bee9d3e591ca15251a3da50e4970b4034f84801e0af28",
+      "size": 711
+    },
+    {
+      "path": "web_app/frontend/src/styles/analysis-context-modeled.css",
+      "sha256": "f4bec08d7ce44c14621ef2167e95d98200d9309816e4403c62673cc32c1f0e7e",
+      "size": 27379
+    },
+    {
+      "path": "web_app/frontend/src/styles/code-generation.css",
+      "sha256": "e39b99ea2222093308bb81e62a153b1d5c770df1f33701b6242d4119a6af2c20",
+      "size": 5925
+    },
+    {
+      "path": "web_app/frontend/src/styles/foundation.css",
+      "sha256": "dd78ad874665cabd746c07390b6813c8ae9da9a3e09a950200726b16c120a8c0",
+      "size": 2465
+    },
+    {
+      "path": "web_app/frontend/src/styles/ledger-grid.css",
+      "sha256": "88bc3a2fd9b9e1c2fbee703da9be2c09c4e5ea3f2a75245191d2a0a55114f969",
+      "size": 1794
+    },
+    {
+      "path": "web_app/frontend/src/styles/metadata-catalog.css",
+      "sha256": "e10663a317c4d0c7d0997d95661f1ed71f7373de06d3ce4fedc351ae8ec4bfb0",
+      "size": 11139
+    },
+    {
+      "path": "web_app/frontend/src/styles/metadata.css",
+      "sha256": "b61438f851e130241494f388c1003b6a393d9378731721db06f933086a8000ae",
+      "size": 12486
+    },
+    {
+      "path": "web_app/frontend/src/styles/profiling.css",
+      "sha256": "ca192af043e6a1f2a56867ed3aa57361e5eaa27a051f3d2de660964bcb033abf",
+      "size": 16442
+    },
+    {
+      "path": "web_app/frontend/src/styles/project-targets.css",
+      "sha256": "4e0d9df5e7984207b47bf34eef335c08f0466818a20f5dbf8526509de0ccb400",
+      "size": 765
+    },
+    {
+      "path": "web_app/frontend/src/styles/project-workspace-overrides.css",
+      "sha256": "8450eef7a888e6a39023e2a213a0dc5243103846fd69e6381a44651e9373c828",
+      "size": 8417
+    },
+    {
+      "path": "web_app/frontend/src/styles/projects-scope.css",
+      "sha256": "b6086b003052114496805b3cd5db3beb9a17dc0c77ba5420d4065826ecc50482",
+      "size": 21976
+    },
+    {
+      "path": "web_app/frontend/src/styles/prompts.css",
+      "sha256": "24e452e2461636c0c6c0a565e458fcf56611890054db891b110379deba1b2963",
+      "size": 27056
+    },
+    {
+      "path": "web_app/frontend/src/styles/tenant-entry.css",
+      "sha256": "807d34386981b2fd112eaa48f2447a83ffc793c35a0b725b345ddee9ed2c8666",
+      "size": 5901
+    },
+    {
+      "path": "web_app/frontend/src/styles/tenant-workspace.css",
+      "sha256": "9e9eae21f1cd49376b04e49036d603a10398907349d81771c9afecd977d02694",
+      "size": 24762
+    },
+    {
+      "path": "web_app/frontend/src/styles/validation.css",
+      "sha256": "946b9e6643aa9e7a467e28d90606ffc72f24ab6ba4dd5c5c85567974faccd3ed",
+      "size": 7196
+    },
+    {
+      "path": "web_app/frontend/src/styles/workflow-command-center.css",
+      "sha256": "61704ed129609f0a45652650a9c407b5c8790ebeaa355443f2c4a1fd3119d269",
+      "size": 9948
+    },
+    {
+      "path": "web_app/frontend/src/styles/workflow-runs.css",
+      "sha256": "9a6c5cab43edd93d197170c14889950063bc67dc04bf39f6456f542661b4fb20",
+      "size": 21660
+    },
+    {
+      "path": "web_app/frontend/src/styles/workspace-design.css",
+      "sha256": "9502ed27c250bac921b516ca80804452a4afa6476b5f8f2079d3b598566268b7",
+      "size": 15397
+    },
+    {
+      "path": "web_app/frontend/src/vite-env.d.ts",
+      "sha256": "65996936fbb042915f7b74a200fcdde7e410f32a669b1ab9597cfaa4b0faddb5",
+      "size": 38
+    },
+    {
+      "path": "web_app/frontend/tsconfig.build.json",
+      "sha256": "4177592007f2f2b6b36b962b9f182588f6dde852ad155f3b0529d3bae4b82207",
+      "size": 147
+    },
+    {
+      "path": "web_app/frontend/tsconfig.json",
+      "sha256": "dd361e47c61dd5f811b4ec35578010ea3b6ccdc9b760af75f0745048f7eb82c0",
+      "size": 610
+    },
+    {
+      "path": "web_app/frontend/vite.config.mjs",
+      "sha256": "acac54053f455d0b54cdc98d922afb99fc64f73751b676420ac38ac808c8b733",
+      "size": 250
+    }
+  ],
+  "expected_installed_source": {
+    "api_sha256": "7731502a1b8e37387a606efdc53b74b3f66a7aea321532ee6df7cd76a64cc90b",
+    "fingerprint_version": 1,
+    "shared_sha256": "3d948c11b77b7aac2d68d15ebe717da115fa7b3404f4c098797a2d712160902c"
+  }
+}

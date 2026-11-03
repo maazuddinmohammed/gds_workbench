@@ -1,0 +1,651 @@
+"""Load one immutable, tenant-fenced agent run plan."""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from typing import Any, Literal, LiteralString, Protocol, cast
+from uuid import UUID
+
+from atlas_mcp.domain.errors import AtlasError
+from atlas_mcp.infrastructure.postgres import ReadTransaction
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
+
+from atlas_platform.capabilities import AgentRunSelection
+from atlas_platform.prompt_rendering import (
+    PromptComponentTemplates,
+    PromptVariableDefinition,
+)
+
+from .agent_execution import AgentToolName
+
+type ProjectWorkflow = Literal[
+    "analysis",
+    "subject_area",
+    "logical",
+    "dimensional",
+    "mapping",
+    "code_generation",
+    "validation",
+    "metadata_enrichment",
+]
+
+type WorkflowExecutionMode = Literal[
+    "one_shot",
+    "tool_assisted",
+]
+type ModeledEntityType = Literal["logical_entity", "dimensional_entity"]
+# Logical and Dimensional Build or Optimize; per_table Analysis makes one call per table.
+type WorkflowOperation = Literal["build", "optimize", "per_table"]
+
+
+class AgentRunPlanTransaction(Protocol):
+    async def fetch_all(
+        self,
+        query: LiteralString,
+        parameters: tuple[Any, ...] = (),
+    ) -> list[dict[str, Any]]: ...
+
+
+_RUN_PLAN_SQL: LiteralString = """
+SELECT run.workflow_run_id,
+       run.project_id,
+       run.correlation_id,
+       run.project_revision,
+       run.project_workflow,
+       run.workflow_execution_mode,
+       run.workflow_operation,
+       run.modeled_entity_type,
+       run.code_generation_coverage_mode,
+       run.code_generation_file_layout,
+       run.code_generation_system_codes,
+       run.selected_scope_digest,
+       run.selected_scope_count,
+       run.agent_sdk_code,
+       run.agent_provider_code,
+       run.agent_model_code,
+       run.reasoning_effort_code,
+       run.max_turns,
+       run.validation_retry_count,
+       stage.workflow_stage_id,
+       stage.project_workflow AS prompt_workflow,
+       stage.workflow_stage_code,
+       stage.workflow_stage_order,
+       version.prompt_template_version_id,
+       snapshot.prompt_template_digest,
+       version.system_prompt_template,
+       version.instruction_prompt_template,
+       version.tool_instruction_prompt_template,
+       version.agent_tool_names,
+       (
+           SELECT count(*)::INTEGER
+             FROM application.workflow_run_prompt_snapshot AS expected_snapshot
+            WHERE expected_snapshot.workflow_run_id = run.workflow_run_id
+       ) AS expected_stage_count,
+       variable.workflow_stage_variable_id,
+       variable.workflow_stage_variable_name,
+       variable.workflow_stage_variable_resolver_key,
+       variable.workflow_stage_variable_data_type,
+       variable.workflow_stage_variable_is_required,
+       variable.workflow_stage_variable_order
+  FROM application.workflow_run AS run
+  JOIN project.project AS target_project
+    ON target_project.project_id = run.project_id
+   AND target_project.tenant_id = %s
+   AND target_project.is_active
+   AND target_project.project_revision = run.project_revision
+  JOIN application.workflow_run_prompt_snapshot AS snapshot
+    ON snapshot.workflow_run_id = run.workflow_run_id
+   AND snapshot.project_id = run.project_id
+  JOIN application.prompt_template_version AS version
+    ON version.prompt_template_version_id = snapshot.prompt_template_version_id
+   AND version.workflow_stage_id = snapshot.workflow_stage_id
+   AND version.prompt_template_digest = snapshot.prompt_template_digest
+  JOIN application.workflow_stage AS stage
+    ON stage.workflow_stage_id = snapshot.workflow_stage_id
+   AND (stage.project_workflow = run.project_workflow OR (
+       run.project_workflow = 'metadata_enrichment' AND stage.project_workflow IN
+       ('metadata_enrichment_object', 'metadata_enrichment_attribute')
+   ))
+   AND stage.workflow_stage_is_agentic
+   AND (
+       stage.workflow_execution_mode = run.workflow_execution_mode
+       OR (
+           stage.workflow_execution_mode IS NULL
+           AND run.workflow_execution_mode IS NULL
+       )
+   )
+  LEFT JOIN application.workflow_stage_variable AS variable
+    ON variable.workflow_stage_id = stage.workflow_stage_id
+   AND variable.is_active
+ WHERE run.project_id = %s
+   AND run.workflow_run_id = %s
+   AND run.workflow_run_state = 'running'
+ ORDER BY stage.workflow_stage_order,
+          stage.workflow_stage_id,
+          variable.workflow_stage_variable_order NULLS LAST,
+          variable.workflow_stage_variable_id NULLS LAST
+"""
+
+_RUN_SELECTION_SQL: LiteralString = """
+SELECT selection.object_id,
+       selection.selection_order
+  FROM application.workflow_run_object_selection AS selection
+  JOIN application.workflow_run AS run
+    ON run.workflow_run_id = selection.workflow_run_id
+   AND run.project_id = selection.project_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = run.project_id
+   AND target_project.tenant_id = %s
+   AND target_project.is_active
+ WHERE selection.project_id = %s
+   AND selection.workflow_run_id = %s
+   AND run.workflow_run_state = 'running'
+ ORDER BY selection.selection_order,
+          selection.workflow_run_object_selection_id
+"""
+
+_RUN_ENTITY_SELECTION_SQL: LiteralString = """
+SELECT selection.modeled_entity_id, selection.selection_order
+ FROM application.workflow_run_entity_selection AS selection
+ JOIN application.workflow_run AS run ON run.workflow_run_id = selection.workflow_run_id AND
+     run.project_id = selection.project_id
+ JOIN project.project AS target_project ON target_project.project_id = run.project_id
+ WHERE target_project.tenant_id = %s AND selection.project_id = %s
+   AND selection.workflow_run_id = %s
+  AND target_project.is_active AND run.workflow_run_state = 'running'
+ ORDER BY selection.selection_order
+"""
+
+# A Build processes its Subject Areas in this frozen order. The run's Project revision is
+# fenced, so each area's name, definition and members are as they were at creation.
+_RUN_SUBJECT_AREA_SQL: LiteralString = """
+SELECT selection.selection_order,
+       area.subject_area_id,
+       area.subject_area_name,
+       area.subject_area_definition
+  FROM application.workflow_run_subject_area_selection AS selection
+  JOIN workflow.subject_area AS area
+    ON area.subject_area_id = selection.subject_area_id
+   AND area.project_id = selection.project_id
+  JOIN application.workflow_run AS run
+    ON run.workflow_run_id = selection.workflow_run_id
+   AND run.project_id = selection.project_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = run.project_id
+   AND target_project.tenant_id = %s
+   AND target_project.is_active
+ WHERE selection.project_id = %s
+   AND selection.workflow_run_id = %s
+   AND run.workflow_run_state = 'running'
+ ORDER BY selection.selection_order
+"""
+
+_RUN_SYSTEM_SELECTION_SQL: LiteralString = """
+SELECT selection.system_code,
+       selection.selection_order
+  FROM application.workflow_run_system_selection AS selection
+  JOIN application.workflow_run AS run
+    ON run.workflow_run_id = selection.workflow_run_id
+   AND run.project_id = selection.project_id
+  JOIN project.project AS target_project
+    ON target_project.project_id = run.project_id
+   AND target_project.tenant_id = %s
+   AND target_project.is_active
+ WHERE selection.project_id = %s
+   AND selection.workflow_run_id = %s
+   AND run.project_workflow = 'validation'
+   AND run.workflow_run_state = 'running'
+ ORDER BY selection.selection_order,
+          selection.workflow_run_system_selection_id
+"""
+
+
+class AgentRunPlanUnavailableError(AtlasError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="agent_run_plan_unavailable",
+            message="The frozen agent run plan is unavailable or incomplete.",
+        )
+
+
+class FrozenAgentStage(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    workflow_stage_id: int = Field(gt=0)
+    prompt_workflow: str | None = None
+    stage_code: str = Field(pattern=r"^[a-z][a-z0-9_]{0,99}$")
+    stage_order: int = Field(gt=0)
+    prompt_template_version_id: int = Field(gt=0)
+    prompt_template_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    templates: PromptComponentTemplates = Field(repr=False)
+    variables: tuple[PromptVariableDefinition, ...] = Field(max_length=100)
+    agent_tool_names: tuple[AgentToolName, ...] | None = Field(default=None, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_variables(self) -> FrozenAgentStage:
+        names = [variable.name for variable in self.variables]
+        resolvers = [variable.resolver_key for variable in self.variables]
+        if len(names) != len(set(names)) or len(resolvers) != len(set(resolvers)):
+            raise ValueError("Prompt variable definitions must be unique")
+        return self
+
+
+class PlannedSubjectArea(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    subject_area_id: int = Field(gt=0)
+    subject_area_name: str = Field(min_length=1, max_length=255)
+    subject_area_definition: str = Field(min_length=1)
+
+
+class AgentRunPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    workflow_run_id: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    correlation_id: UUID
+    project_revision: int = Field(ge=0)
+    project_workflow: ProjectWorkflow
+    workflow_execution_mode: WorkflowExecutionMode | None
+    workflow_operation: WorkflowOperation | None = None
+    # Build only: the selected Subject Areas in processing order.
+    subject_areas: tuple[PlannedSubjectArea, ...] = ()
+    modeled_entity_type: ModeledEntityType | None
+    code_generation_coverage_mode: (
+        Literal[
+            "selected_targets",
+            "all_eligible_targets",
+        ]
+        | None
+    ) = None
+    code_generation_file_layout: Literal["combined", "per_system"] | None = None
+    selected_scope_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    selected_object_ids: tuple[int, ...]
+    selected_entity_ids: tuple[int, ...] = ()
+    selected_system_codes: tuple[str, ...] = ()
+    selection: AgentRunSelection
+    stages: tuple[FrozenAgentStage, ...] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_plan(self) -> AgentRunPlan:
+        if (self.project_workflow in {"logical", "dimensional"}) != (
+            self.workflow_operation in {"build", "optimize"}
+        ) or (self.workflow_operation == "build") != bool(self.subject_areas):
+            raise ValueError("Build and Optimize plans do not match the workflow")
+        if self.workflow_operation == "per_table" and (
+            self.project_workflow != "analysis" or self.workflow_execution_mode != "one_shot"
+        ):
+            raise ValueError("Per-table runs are one-shot Analysis runs")
+        if len({area.subject_area_id for area in self.subject_areas}) != len(self.subject_areas):
+            raise ValueError("Selected Subject Areas must be unique")
+        if self.project_workflow == "metadata_enrichment" and (
+            self.workflow_execution_mode != "one_shot"
+        ):
+            raise ValueError("Metadata enrichment requires one-shot execution")
+        if self.project_workflow == "code_generation":
+            if self.code_generation_coverage_mode is None:
+                raise ValueError("Code Generation plan snapshot is incomplete")
+            if self.code_generation_file_layout is None:
+                object.__setattr__(self, "code_generation_file_layout", "combined")
+        elif (
+            self.code_generation_coverage_mode is not None
+            or self.code_generation_file_layout is not None
+        ):
+            raise ValueError("Code Generation plan snapshot is unavailable")
+        entity_workflow = self.project_workflow in {"dimensional", "mapping", "code_generation"}
+        selected_ids = self.selected_entity_ids if entity_workflow else self.selected_object_ids
+        if (entity_workflow and self.selected_object_ids) or (
+            not entity_workflow and self.selected_entity_ids
+        ):
+            raise ValueError("Run selections do not match the workflow")
+        if len(self.selected_entity_ids) != len(set(self.selected_entity_ids)):
+            raise ValueError("Selected Entities must be unique")
+        if len(self.selected_object_ids) != len(set(self.selected_object_ids)):
+            raise ValueError("Selected Objects must be unique")
+        normalized_system_codes = [value.strip().casefold() for value in self.selected_system_codes]
+        if any(not value for value in normalized_system_codes) or len(
+            normalized_system_codes
+        ) != len(set(normalized_system_codes)):
+            raise ValueError("Selected Systems must be nonblank and unique")
+        if self.project_workflow == "validation":
+            if self.selected_object_ids or not self.selected_system_codes:
+                raise ValueError("Validation requires only an explicit System selection")
+        elif (
+            self.selected_system_codes and self.project_workflow != "code_generation"
+        ) or not selected_ids:
+            raise ValueError("Only Validation may use a System selection")
+        stage_ids = [stage.workflow_stage_id for stage in self.stages]
+        stage_orders = [stage.stage_order for stage in self.stages]
+        if len(stage_ids) != len(set(stage_ids)) or len(stage_orders) != len(set(stage_orders)):
+            raise ValueError("Agent stages must be unique")
+        return self
+
+
+class AgentRunPlanRepository(Protocol):
+    async def load(
+        self,
+        transaction: ReadTransaction,
+        *,
+        tenant_id: int,
+        project_id: int,
+        workflow_run_id: int,
+    ) -> AgentRunPlan: ...
+
+
+class PostgresAgentRunPlanRepository:
+    """Read one frozen plan from fixed PostgreSQL queries or fail closed."""
+
+    async def load(
+        self,
+        transaction: AgentRunPlanTransaction,
+        *,
+        tenant_id: int,
+        project_id: int,
+        workflow_run_id: int,
+    ) -> AgentRunPlan:
+        parameters = (tenant_id, project_id, workflow_run_id)
+        rows = await transaction.fetch_all(_RUN_PLAN_SQL, parameters)
+        entity_workflow = bool(
+            rows
+            and rows[0].get("project_workflow") in {"dimensional", "mapping", "code_generation"}
+        )
+        selection_rows = await transaction.fetch_all(
+            _RUN_ENTITY_SELECTION_SQL if entity_workflow else _RUN_SELECTION_SQL, parameters
+        )
+        system_selection_rows = (
+            await transaction.fetch_all(_RUN_SYSTEM_SELECTION_SQL, parameters)
+            if rows and rows[0].get("project_workflow") == "validation"
+            else []
+        )
+        subject_area_rows = (
+            await transaction.fetch_all(_RUN_SUBJECT_AREA_SQL, parameters)
+            if rows and rows[0].get("workflow_operation") == "build"
+            else []
+        )
+        try:
+            return _assemble_plan(
+                rows=rows,
+                selection_rows=selection_rows,
+                system_selection_rows=system_selection_rows,
+                subject_area_rows=subject_area_rows,
+            )
+        except AgentRunPlanUnavailableError:
+            raise
+        except Exception:
+            raise AgentRunPlanUnavailableError() from None
+
+
+def _assemble_plan(
+    *,
+    rows: Sequence[dict[str, Any]],
+    selection_rows: Sequence[dict[str, Any]],
+    system_selection_rows: Sequence[dict[str, Any]] = (),
+    subject_area_rows: Sequence[dict[str, Any]] = (),
+) -> AgentRunPlan:
+    if not rows:
+        raise AgentRunPlanUnavailableError()
+
+    first = rows[0]
+    project_workflow = _required_str(first, "project_workflow")
+    if (project_workflow == "validation") == bool(selection_rows):
+        raise AgentRunPlanUnavailableError()
+    if project_workflow != "validation" and system_selection_rows:
+        raise AgentRunPlanUnavailableError()
+    expected_stage_count = _required_int(first, "expected_stage_count")
+    selected_scope_count = _required_int(first, "selected_scope_count")
+    if expected_stage_count < 1 or selected_scope_count < 1:
+        raise AgentRunPlanUnavailableError()
+
+    selected_object_ids: list[int] = []
+    for expected_order, row in enumerate(selection_rows, start=1):
+        if _required_int(row, "selection_order") != expected_order:
+            raise AgentRunPlanUnavailableError()
+        selected_object_ids.append(
+            _required_int(
+                row,
+                "modeled_entity_id"
+                if project_workflow in {"dimensional", "mapping", "code_generation"}
+                else "object_id",
+            )
+        )
+    if project_workflow != "validation" and (
+        len(selected_object_ids) != selected_scope_count
+        or len(selected_object_ids) != len(set(selected_object_ids))
+    ):
+        raise AgentRunPlanUnavailableError()
+    selected_system_codes: list[str] = []
+    for expected_order, row in enumerate(system_selection_rows, start=1):
+        if _required_int(row, "selection_order") != expected_order:
+            raise AgentRunPlanUnavailableError()
+        selected_system_codes.append(_required_str(row, "system_code"))
+    normalized_system_codes = [value.strip().casefold() for value in selected_system_codes]
+    if project_workflow == "validation" and (
+        len(selected_system_codes) != selected_scope_count
+        or not selected_system_codes
+        or len(normalized_system_codes) != len(set(normalized_system_codes))
+    ):
+        raise AgentRunPlanUnavailableError()
+
+    grouped: dict[int, list[dict[str, Any]]] = {}
+    identity_keys = (
+        "workflow_run_id",
+        "project_id",
+        "correlation_id",
+        "project_revision",
+        "project_workflow",
+        "workflow_execution_mode",
+        "workflow_operation",
+        "modeled_entity_type",
+        "code_generation_coverage_mode",
+        "code_generation_file_layout",
+        "code_generation_system_codes",
+        "selected_scope_digest",
+        "selected_scope_count",
+        "agent_sdk_code",
+        "agent_provider_code",
+        "agent_model_code",
+        "reasoning_effort_code",
+        "max_turns",
+        "validation_retry_count",
+        "expected_stage_count",
+    )
+    for row in rows:
+        if any(row.get(key) != first.get(key) for key in identity_keys):
+            raise AgentRunPlanUnavailableError()
+        stage_id = _required_int(row, "workflow_stage_id")
+        grouped.setdefault(stage_id, []).append(row)
+    if len(grouped) != expected_stage_count:
+        raise AgentRunPlanUnavailableError()
+
+    stages: list[FrozenAgentStage] = []
+    for stage_rows in grouped.values():
+        stage_first = stage_rows[0]
+        stage_identity_keys = (
+            "prompt_workflow",
+            "workflow_stage_code",
+            "workflow_stage_order",
+            "prompt_template_version_id",
+            "prompt_template_digest",
+            "system_prompt_template",
+            "instruction_prompt_template",
+            "tool_instruction_prompt_template",
+            "agent_tool_names",
+        )
+        if any(
+            row.get(key) != stage_first.get(key)
+            for row in stage_rows
+            for key in stage_identity_keys
+        ):
+            raise AgentRunPlanUnavailableError()
+
+        variables: list[PromptVariableDefinition] = []
+        variable_orders: list[int] = []
+        for row in stage_rows:
+            variable_id = row.get("workflow_stage_variable_id")
+            if variable_id is None:
+                if len(stage_rows) != 1:
+                    raise AgentRunPlanUnavailableError()
+                continue
+            if isinstance(variable_id, bool) or not isinstance(variable_id, int):
+                raise AgentRunPlanUnavailableError()
+            variable_orders.append(_required_int(row, "workflow_stage_variable_order"))
+            variables.append(
+                PromptVariableDefinition(
+                    name=_required_str(row, "workflow_stage_variable_name"),
+                    resolver_key=_required_str(
+                        row,
+                        "workflow_stage_variable_resolver_key",
+                    ),
+                    data_type=cast(
+                        Any,
+                        _required_str(row, "workflow_stage_variable_data_type"),
+                    ),
+                    is_required=_required_bool(
+                        row,
+                        "workflow_stage_variable_is_required",
+                    ),
+                )
+            )
+        if variable_orders and variable_orders != sorted(variable_orders):
+            raise AgentRunPlanUnavailableError()
+
+        raw_tools = stage_first.get("agent_tool_names")
+        selected_tools = (
+            TypeAdapter(tuple[AgentToolName, ...]).validate_python(
+                tuple(cast(Sequence[object], raw_tools)), strict=True
+            )
+            if isinstance(raw_tools, (list, tuple))
+            else None
+        )
+        if raw_tools is not None and selected_tools is None:
+            raise AgentRunPlanUnavailableError()
+        stages.append(
+            FrozenAgentStage(
+                workflow_stage_id=_required_int(stage_first, "workflow_stage_id"),
+                prompt_workflow=stage_first.get("prompt_workflow"),
+                stage_code=_required_str(stage_first, "workflow_stage_code"),
+                stage_order=_required_int(stage_first, "workflow_stage_order"),
+                prompt_template_version_id=_required_int(
+                    stage_first,
+                    "prompt_template_version_id",
+                ),
+                prompt_template_digest=_required_str(
+                    stage_first,
+                    "prompt_template_digest",
+                ),
+                templates=PromptComponentTemplates(
+                    system=_required_str(stage_first, "system_prompt_template"),
+                    instruction=_required_str(
+                        stage_first,
+                        "instruction_prompt_template",
+                    ),
+                    tool_instruction=_optional_str(
+                        stage_first,
+                        "tool_instruction_prompt_template",
+                    ),
+                ),
+                variables=tuple(variables),
+                agent_tool_names=selected_tools,
+            )
+        )
+    stages.sort(key=lambda stage: (stage.stage_order, stage.workflow_stage_id))
+    subject_areas: list[PlannedSubjectArea] = []
+    for expected_order, row in enumerate(subject_area_rows, start=1):
+        if _required_int(row, "selection_order") != expected_order:
+            raise AgentRunPlanUnavailableError()
+        subject_areas.append(
+            PlannedSubjectArea(
+                subject_area_id=_required_int(row, "subject_area_id"),
+                subject_area_name=_required_str(row, "subject_area_name"),
+                subject_area_definition=_required_str(row, "subject_area_definition"),
+            )
+        )
+
+    return AgentRunPlan(
+        workflow_run_id=_required_int(first, "workflow_run_id"),
+        project_id=_required_int(first, "project_id"),
+        correlation_id=_required_uuid(first, "correlation_id"),
+        project_revision=_required_int(first, "project_revision"),
+        project_workflow=cast(ProjectWorkflow, project_workflow),
+        workflow_execution_mode=cast(
+            WorkflowExecutionMode | None,
+            _optional_str(first, "workflow_execution_mode"),
+        ),
+        workflow_operation=cast(
+            WorkflowOperation | None, _optional_str(first, "workflow_operation")
+        ),
+        subject_areas=tuple(subject_areas),
+        modeled_entity_type=cast(
+            ModeledEntityType | None,
+            _optional_str(first, "modeled_entity_type"),
+        ),
+        code_generation_coverage_mode=cast(
+            Literal["selected_targets", "all_eligible_targets"] | None,
+            _optional_str(first, "code_generation_coverage_mode"),
+        ),
+        selected_scope_digest=_required_str(first, "selected_scope_digest"),
+        selected_object_ids=()
+        if project_workflow in {"dimensional", "mapping", "code_generation"}
+        else tuple(selected_object_ids),
+        selected_entity_ids=tuple(selected_object_ids)
+        if project_workflow in {"dimensional", "mapping", "code_generation"}
+        else (),
+        selected_system_codes=tuple(first.get("code_generation_system_codes") or ())
+        if project_workflow == "code_generation"
+        else tuple(selected_system_codes),
+        code_generation_file_layout=first.get("code_generation_file_layout"),
+        selection=AgentRunSelection(
+            sdk_code=_required_str(first, "agent_sdk_code"),
+            provider_code=_required_str(first, "agent_provider_code"),
+            model_code=_required_str(first, "agent_model_code"),
+            reasoning_effort_code=_required_str(first, "reasoning_effort_code"),
+            max_turns=_required_int(first, "max_turns"),
+            validation_retry_count=_nonnegative_int(
+                first,
+                "validation_retry_count",
+            ),
+        ),
+        stages=tuple(stages),
+    )
+
+
+def _required_int(row: dict[str, Any], key: str) -> int:
+    value = row.get(key)
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise AgentRunPlanUnavailableError()
+    return value
+
+
+def _nonnegative_int(row: dict[str, Any], key: str) -> int:
+    value = row.get(key)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise AgentRunPlanUnavailableError()
+    return value
+
+
+def _required_bool(row: dict[str, Any], key: str) -> bool:
+    value = row.get(key)
+    if not isinstance(value, bool):
+        raise AgentRunPlanUnavailableError()
+    return value
+
+
+def _required_uuid(row: dict[str, Any], key: str) -> UUID:
+    value = row.get(key)
+    if not isinstance(value, UUID):
+        raise AgentRunPlanUnavailableError()
+    return value
+
+
+def _required_str(row: dict[str, Any], key: str) -> str:
+    value = row.get(key)
+    if not isinstance(value, str) or not value or "\x00" in value:
+        raise AgentRunPlanUnavailableError()
+    return value
+
+
+def _optional_str(row: dict[str, Any], key: str) -> str | None:
+    value = row.get(key)
+    if value is None:
+        return None
+    return _required_str(row, key)

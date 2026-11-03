@@ -1,0 +1,386 @@
+import { METADATA_XLSX_MEDIA_TYPE } from "../metadata/api";
+import type { ProjectRecordReviewApi, ProjectRecordEditorApi } from "../project_record_review/api";
+import { ApiError, type HttpRequest } from "../../core/http";
+import type { JsonObject, ReviewStatus } from "../../shared/contracts";
+import type { ProjectsApi } from "../projects/api";
+import type { WorkflowsApi } from "../workflows/api";
+
+export type MappingEntityType = "logical_entity" | "dimensional_entity";
+export type MappingStatus = ReviewStatus;
+
+export interface MappingFilters {
+  mappingObjectId?: number;
+  entityType?: MappingEntityType;
+  sourceSystemId?: number;
+  sourceSystemCode?: string;
+  status?: MappingStatus;
+  locked?: boolean;
+}
+
+export type OutputTemplateTargetType = "mapping_object" | "mapping_attribute";
+
+export interface OutputTemplateSummary {
+  output_template_id: number;
+  output_template_code: string;
+  output_template_name: string;
+  output_template_description: string | null;
+  output_template_target_type: OutputTemplateTargetType;
+  output_template_modeled_entity_type: MappingEntityType | null;
+  output_template_schema_digest: string;
+  output_template_schema_digest_is_valid: boolean;
+  is_active: boolean;
+  field_count: number;
+}
+
+export interface OutputTemplatePage {
+  tenant_id: number;
+  items: OutputTemplateSummary[];
+  next_cursor: string | null;
+}
+
+export interface MappingSourceSystem {
+  system_id: number;
+  system_code: string;
+  system_name: string;
+}
+
+export interface MappingModeledEntity {
+  entity_type: MappingEntityType;
+  entity_id: number;
+  entity_schema_name: string;
+  entity_name: string;
+}
+
+export interface MappingModeledAttribute {
+  entity: MappingModeledEntity;
+  attribute_id: number;
+  attribute_name: string;
+  ordinal_position: number;
+  data_type: string;
+}
+
+export interface MappingGenerationTarget extends MappingModeledEntity {
+  source_system: MappingSourceSystem;
+  entity_name: string;
+  mapping_object_id: number | null;
+  object_order: number;
+  is_locked: boolean;
+  attributes: { attribute_id: number; attribute_name: string; modeled_attribute_name: string; ordinal_position: number; is_locked: boolean; is_authored: boolean }[];
+}
+
+export interface MappingGenerationPage {
+  project_id: number; project_revision: number; items: MappingGenerationTarget[];
+  unsupplied_entity_count: number; next_cursor: string | null;
+}
+
+export interface MappingObject {
+  mapping_object_id: number;
+  workflow_run_id: number | null;
+  target: MappingModeledEntity;
+  source_system: MappingSourceSystem;
+  dependency_order: number;
+  status: MappingStatus;
+  is_locked: boolean;
+  updated_at: string;
+}
+
+export interface MappingObjectPage {
+  project_id: number;
+  project_revision: number;
+  items: MappingObject[];
+  next_cursor: string | null;
+}
+
+export interface MappingOutputTemplateProvenance {
+  output_template_id: number;
+  output_template_code: string;
+  output_template_name: string;
+  output_template_target_type: OutputTemplateTargetType;
+  output_template_modeled_entity_type: MappingEntityType | null;
+  output_template_schema_digest: string;
+  is_active: boolean;
+}
+
+export interface MappingObjectDetail extends MappingObject {
+  mapping_document: JsonObject | null;
+  output_template: MappingOutputTemplateProvenance | null;
+  created_at: string;
+}
+
+export interface MappingAttribute {
+  mapping_attribute_id: number | null;
+  workflow_run_id: number | null;
+  mapping_object_id: number;
+  target: MappingModeledAttribute;
+  source_system: MappingSourceSystem;
+  status: MappingStatus | null;
+  is_locked: boolean;
+  updated_at: string | null;
+}
+
+export interface MappingAttributePage {
+  project_id: number;
+  project_revision: number;
+  items: MappingAttribute[];
+  next_cursor: string | null;
+}
+
+export interface MappingParentObjectReference {
+  mapping_object_id: number;
+  dependency_order: number;
+  status: MappingStatus;
+  is_locked: boolean;
+}
+
+export interface MappingAttributeDetail extends MappingAttribute {
+  mapping_attribute_id: number;
+  status: MappingStatus;
+  updated_at: string;
+  parent_object_mapping: MappingParentObjectReference;
+  mapping_document: JsonObject | null;
+  output_template: MappingOutputTemplateProvenance | null;
+  created_at: string;
+}
+
+export interface MappingTransport {
+  exportMapping: (tenantId: number, projectId: number, revision: number, entityType: MappingEntityType, systemCode: string) => Promise<{ blob: Blob; filename: string }>;
+  listMappingGenerationTargets: (tenantId: number, projectId: number, entityType: MappingEntityType, pageSize?: number, cursor?: string) => Promise<MappingGenerationPage>;
+  listMappingObjects: (
+    tenantId: number,
+    projectId: number,
+    filters?: MappingFilters,
+    pageSize?: number,
+    cursor?: string,
+  ) => Promise<MappingObjectPage>;
+  readMappingObject: (
+    tenantId: number,
+    projectId: number,
+    mappingObjectId: number,
+  ) => Promise<MappingObjectDetail>;
+  listMappingAttributes: (
+    tenantId: number,
+    projectId: number,
+    filters?: MappingFilters,
+    pageSize?: number,
+    cursor?: string,
+  ) => Promise<MappingAttributePage>;
+  readMappingAttribute: (
+    tenantId: number,
+    projectId: number,
+    mappingAttributeId: number,
+  ) => Promise<MappingAttributeDetail>;
+  listOutputTemplates: (
+    tenantId: number,
+    targetType: OutputTemplateTargetType,
+    pageSize?: number,
+    cursor?: string,
+    entityType?: MappingEntityType,
+  ) => Promise<OutputTemplatePage>;
+}
+
+export type MappingApi = MappingTransport & ProjectRecordReviewApi
+  & Pick<ProjectRecordEditorApi, "readProjectRecordEditor" | "saveProjectRecord">
+  & Pick<ProjectsApi, "listProjects">
+  & Pick<
+    WorkflowsApi,
+    | "applyWorkflowDraft"
+  | "cancelWorkflowRun"
+    | "createWorkflowRun"
+    | "executeMappingRun"
+    | "listWorkflowRunEvents"
+    | "listWorkflowRuns"
+    | "readAgentCapabilities"
+    | "readWorkflowDraftReview"
+    | "readWorkflowRun"
+  >;
+
+export function createMappingApi(request: HttpRequest): MappingTransport {
+  return {
+    exportMapping: (tenantId, projectId, revision, entityType, systemCode) => request(`/api/v1/tenants/${tenantId}/projects/${projectId}/mapping/export`, {
+      method: "POST", headers: { "content-type": "application/json", accept: METADATA_XLSX_MEDIA_TYPE },
+      body: JSON.stringify({ expected_project_revision: revision, entity_type: entityType, source_system_code: systemCode }),
+    }, async (response) => {
+      if (response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== METADATA_XLSX_MEDIA_TYPE) throw new ApiError(502, "invalid_response", null);
+      return { blob: await response.blob(), filename: /filename="([A-Za-z0-9._-]{1,180}\.xlsx)"/.exec(response.headers.get("content-disposition") ?? "")?.[1] ?? "Mapping.xlsx" };
+    }),
+    listMappingGenerationTargets: (tenantId, projectId, entityType, pageSize = 200, cursor) => {
+      const query = new URLSearchParams({
+        entity_type: entityType,
+        page_size: String(pageSize),
+      });
+      if (cursor) query.set("cursor", cursor);
+      return request<MappingGenerationPage>(
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/mapping/generation-targets?${query}`,
+      );
+    },
+    listMappingObjects: (tenantId, projectId, filters = {}, pageSize = 200, cursor) =>
+      request<MappingObjectPage>(
+        mappingCollectionPath(tenantId, projectId, "objects", filters, pageSize, cursor),
+      ),
+    readMappingObject: (tenantId, projectId, mappingObjectId) =>
+      request<MappingObjectDetail>(
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/mapping/objects/${mappingObjectId}`,
+      ),
+    listMappingAttributes: (tenantId, projectId, filters = {}, pageSize = 200, cursor) =>
+      request<MappingAttributePage>(
+        mappingCollectionPath(tenantId, projectId, "attributes", filters, pageSize, cursor),
+      ),
+    readMappingAttribute: (tenantId, projectId, mappingAttributeId) =>
+      request<MappingAttributeDetail>(
+        `/api/v1/tenants/${tenantId}/projects/${projectId}/mapping/attributes/${mappingAttributeId}`,
+      ),
+    listOutputTemplates: (tenantId, targetType, pageSize = 200, cursor, entityType) => {
+      const query = new URLSearchParams({
+        target_type: targetType,
+        active: "true",
+        page_size: String(pageSize),
+      });
+      if (entityType) query.set("entity_type", entityType);
+      if (cursor) query.set("cursor", cursor);
+      return request<OutputTemplatePage>(
+        `/api/v1/tenants/${tenantId}/output-templates?${query}`,
+      );
+    },
+  };
+}
+
+export const mappingQueryKeys = {
+  objects: (tenantId: number, projectId: number, filters: unknown) => (
+    ["mapping-objects", tenantId, projectId, filters] as const
+  ),
+  object: (tenantId: number, projectId: number, mappingObjectId: number) => (
+    ["mapping-object", tenantId, projectId, mappingObjectId] as const
+  ),
+  attributes: (tenantId: number, projectId: number, filters: unknown) => (
+    ["mapping-attributes", tenantId, projectId, filters] as const
+  ),
+  attribute: (tenantId: number, projectId: number, mappingAttributeId: number) => (
+    ["mapping-attribute", tenantId, projectId, mappingAttributeId] as const
+  ),
+  runTargets: (tenantId: number, projectId: number, entityType: MappingEntityType) => (
+    ["mapping-run-targets", tenantId, projectId, entityType] as const
+  ),
+  outputTemplates: (tenantId: number, projectId: number, entityType: MappingEntityType) => (
+    ["mapping-output-templates", tenantId, projectId, entityType] as const
+  ),
+};
+
+export interface ActiveMappingOutputTemplates {
+  mappingObjects: OutputTemplateSummary[];
+  mappingAttributes: OutputTemplateSummary[];
+}
+
+export async function loadActiveMappingOutputTemplates(
+  api: Pick<MappingTransport, "listOutputTemplates">,
+  tenantId: number,
+  entityType: MappingEntityType,
+): Promise<ActiveMappingOutputTemplates> {
+  const [mappingObjects, mappingAttributes] = await Promise.all([
+    loadOutputTemplatesForTargetType(api, tenantId, "mapping_object", entityType),
+    loadOutputTemplatesForTargetType(api, tenantId, "mapping_attribute", entityType),
+  ]);
+  return { mappingObjects, mappingAttributes };
+}
+
+async function loadOutputTemplatesForTargetType(
+  api: Pick<MappingTransport, "listOutputTemplates">,
+  tenantId: number,
+  targetType: OutputTemplateTargetType,
+  entityType: MappingEntityType,
+): Promise<OutputTemplateSummary[]> {
+  const items: OutputTemplateSummary[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+
+  for (;;) {
+    const response = await api.listOutputTemplates(tenantId, targetType, 200, cursor, entityType);
+    items.push(...response.items);
+    if (!response.next_cursor) return items;
+    if (seenCursors.has(response.next_cursor)) {
+      throw new Error("Output Template cursor repeated");
+    }
+    seenCursors.add(response.next_cursor);
+    cursor = response.next_cursor;
+  }
+}
+
+export async function loadMappingGenerationTargets(
+  api: Pick<MappingTransport, "listMappingGenerationTargets">,
+  tenantId: number,
+  projectId: number,
+  entityType: MappingEntityType,
+): Promise<{ projectRevision: number; items: MappingGenerationTarget[]; unsuppliedEntityCount: number }> {
+  const items: MappingGenerationTarget[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+  let projectRevision: number | null = null;
+
+  for (;;) {
+    const response = await api.listMappingGenerationTargets(tenantId, projectId, entityType, 200, cursor);
+    if (projectRevision !== null && response.project_revision !== projectRevision) {
+      throw new Error("Mapping target revision changed while loading");
+    }
+    projectRevision = response.project_revision;
+    items.push(...response.items);
+    if (!response.next_cursor) return { projectRevision, items, unsuppliedEntityCount: response.unsupplied_entity_count };
+    if (seenCursors.has(response.next_cursor)) {
+      throw new Error("Mapping target cursor repeated");
+    }
+    seenCursors.add(response.next_cursor);
+    cursor = response.next_cursor;
+  }
+}
+
+/** Systems for the layer's System tabs: every branch System plus Systems with saved Mappings. */
+export async function loadMappingSystems(
+  api: Pick<MappingTransport, "listMappingGenerationTargets" | "listMappingObjects">,
+  tenantId: number,
+  projectId: number,
+  entityType: MappingEntityType,
+): Promise<{ projectRevision: number; systems: { code: string; mappings: number }[] }> {
+  const targets = await loadMappingGenerationTargets(api, tenantId, projectId, entityType);
+  const systems = new Map(targets.items.map((item) => [item.source_system.system_code.toLowerCase(),
+    { code: item.source_system.system_code, mappings: 0 }]));
+  const cursors = new Set<string>();
+  let cursor: string | undefined;
+  for (let page = 0; page < 250; page += 1) {
+    const saved = await api.listMappingObjects(tenantId, projectId, { entityType }, 200, cursor);
+    if (saved.project_revision !== targets.projectRevision) throw new Error("Mapping filter revision changed while loading");
+    for (const row of saved.items) {
+      const key = row.source_system.system_code.toLowerCase();
+      const system = systems.get(key) ?? { code: row.source_system.system_code, mappings: 0 };
+      systems.set(key, { ...system, mappings: system.mappings + 1 });
+    }
+    if (!saved.next_cursor) {
+      return { projectRevision: targets.projectRevision, systems: [...systems.values()].sort((a, b) => a.code.localeCompare(b.code)) };
+    }
+    if (cursors.has(saved.next_cursor)) throw new Error("Mapping filter cursor repeated");
+    cursors.add(saved.next_cursor); cursor = saved.next_cursor;
+  }
+  throw new Error("Mapping filters exceed the supported bounded selection");
+}
+
+function mappingCollectionPath(
+  tenantId: number,
+  projectId: number,
+  collection: "objects" | "attributes",
+  filters: MappingFilters,
+  pageSize: number,
+  cursor: string | undefined,
+): string {
+  const query = new URLSearchParams();
+  if (filters.entityType) query.set("entity_type", filters.entityType);
+  if (filters.sourceSystemId) query.set("source_system_id", String(filters.sourceSystemId));
+  const sourceSystemCode = normalizeNaturalKeyFilter(filters.sourceSystemCode);
+  if (sourceSystemCode) query.set("source_system_code", sourceSystemCode);
+  if (filters.status) query.set("status", filters.status);
+  if (filters.locked !== undefined) query.set("locked", String(filters.locked));
+  if (filters.mappingObjectId !== undefined) query.set("mapping_object_id", String(filters.mappingObjectId));
+  query.set("page_size", String(pageSize));
+  if (cursor) query.set("cursor", cursor);
+  return `/api/v1/tenants/${tenantId}/projects/${projectId}/mapping/${collection}?${query}`;
+}
+
+function normalizeNaturalKeyFilter(value: string | undefined): string {
+  return value?.replace(/^ +| +$/g, "").toLowerCase() ?? "";
+}

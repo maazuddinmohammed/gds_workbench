@@ -1,0 +1,212 @@
+import { WorkflowFilters } from "../workflows/WorkflowCommandCenter";
+import { useMemo } from "react";
+import { useForm } from "@tanstack/react-form";
+import { Link } from "@tanstack/react-router";
+import { getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
+
+import { formatRequiredDateTime as formatDateTime } from "../../shared/presentation";
+import type {
+  ProfilingFilters,
+  ProfilingObject,
+} from "./api";
+import { WorkflowTable } from "./shared";
+import { SourceCodeFilter, SourceFilterNotice, type ScopeFilterChoices } from "../project_input_scope/scopeFilterChoices";
+
+export function ProfilingResults({
+  tenantId,
+  projectId,
+  filters,
+  sourceChoices,
+  items,
+  isLoading,
+  isError,
+  revisionMismatch,
+  onApplyFilters,
+}: {
+  tenantId: number;
+  projectId: number;
+  filters: ProfilingFilters;
+  sourceChoices: ScopeFilterChoices;
+  items: ProfilingObject[];
+  isLoading: boolean;
+  isError: boolean;
+  revisionMismatch: boolean;
+  onApplyFilters: (filters: ProfilingFilters) => void;
+}) {
+  const columns = useMemo<ColumnDef<ProfilingObject>[]>(() => [
+    {
+      accessorKey: "source_tenant_code",
+      header: "Source Tenant",
+      cell: ({ row }) => (
+        <strong>{row.original.source_tenant_code}</strong>
+      ),
+    },
+    {
+      accessorKey: "system_code",
+      header: "System",
+      cell: ({ row }) => (
+        <strong>{row.original.system_code}</strong>
+      ),
+    },
+    { accessorKey: "object_schema", header: "Schema" },
+    {
+      accessorKey: "object_name",
+      header: "Object",
+      cell: ({ getValue }) => <strong>{getValue<string>()}</strong>,
+    },
+    {
+      accessorKey: "profiled_attribute_count",
+      header: "Profiles",
+      cell: ({ getValue }) => `${getValue<number>()} profiles`,
+    },
+    {
+      accessorKey: "last_profiled_at",
+      header: "Last profiled",
+      cell: ({ getValue }) => formatDateTime(getValue<string>()),
+    },
+    {
+      id: "actions",
+      header: "Actions",
+      cell: ({ row }) => (
+        <Link
+          id={`profiling-detail-trigger-${row.original.object_id}`}
+          className="text-action"
+          aria-label={`Open profiling details for ${row.original.object_name}`}
+          to="/tenants/$tenantId/projects/$projectId/profiling/$objectId"
+          params={{
+            tenantId: String(tenantId),
+            projectId: String(projectId),
+            objectId: String(row.original.object_id),
+          }}
+          search={{ ...filters, returnObjectId: row.original.object_id }}
+        >
+          Show details
+        </Link>
+      ),
+    },
+  ], [filters, projectId, tenantId]);
+  const table = useReactTable({ data: items, columns, getCoreRowModel: getCoreRowModel() });
+
+  return (
+    <section
+      id="profiling-results-surface"
+      className="workflow-surface"
+      aria-label="Profiling result review"
+      tabIndex={-1}
+    >
+      <ProfilingFilterForm filters={filters} sourceChoices={sourceChoices} onApply={onApplyFilters} />
+      {isLoading ? (
+        <div className="surface-state" aria-busy="true">Loading profiling results…</div>
+      ) : revisionMismatch ? (
+        <div className="surface-state is-error" role="alert">
+          The Project changed while profiling results were loading. Refresh before review.
+        </div>
+      ) : isError ? (
+        <div className="surface-state is-error" role="alert">
+          Profiling results could not be loaded.
+        </div>
+      ) : (
+        <WorkflowTable table={table} label="Profiling results" selectedId={null} />
+      )}
+      {!isLoading && !isError && !revisionMismatch && !items.length ? (
+        <div className="empty-state compact">No profiling results match these filters.</div>
+      ) : null}
+    </section>
+  );
+}
+
+function ProfilingFilterForm({
+  filters,
+  sourceChoices,
+  onApply,
+}: {
+  filters: ProfilingFilters;
+  sourceChoices: ScopeFilterChoices;
+  onApply: (filters: ProfilingFilters) => void;
+}) {
+  const form = useForm({
+    defaultValues: {
+      sourceTenantCode: filters.sourceTenantCode ?? "",
+      systemCode: filters.systemCode ?? "",
+      objectSchema: filters.objectSchema ?? "",
+      objectName: filters.objectName ?? "",
+    },
+    onSubmit: ({ value }) => {
+      const nextFilters: ProfilingFilters = {};
+      if (value.sourceTenantCode.trim()) nextFilters.sourceTenantCode = value.sourceTenantCode;
+      if (value.systemCode.trim()) nextFilters.systemCode = value.systemCode;
+      if (value.objectSchema.trim()) nextFilters.objectSchema = value.objectSchema;
+      if (value.objectName.trim()) nextFilters.objectName = value.objectName;
+      onApply(nextFilters);
+    },
+  });
+
+  return (
+    <WorkflowFilters><form
+      className="workflow-filterbar profiling-filterbar"
+      aria-label="Profiling result filters"
+      onSubmit={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void form.handleSubmit();
+      }}
+    >
+      <form.Field name="sourceTenantCode">
+        {(field) => (
+          <SourceCodeFilter label="Source Tenant code" value={field.state.value}
+            codes={sourceChoices.tenantCodes} isLoading={sourceChoices.isLoading}
+            isUnavailable={sourceChoices.isUnavailable} onChange={field.handleChange} />
+        )}
+      </form.Field>
+      <form.Field name="systemCode">
+        {(field) => (
+          <SourceCodeFilter label="System code" value={field.state.value}
+            codes={sourceChoices.systemCodes} isLoading={sourceChoices.isLoading}
+            isUnavailable={sourceChoices.isUnavailable} onChange={field.handleChange} />
+        )}
+      </form.Field>
+      <form.Field name="objectSchema">
+        {(field) => (
+          <label>
+            <span>Object schema</span>
+            <input
+              aria-label="Object schema"
+              value={field.state.value}
+              onBlur={field.handleBlur}
+              onChange={(event) => field.handleChange(event.target.value)}
+            />
+          </label>
+        )}
+      </form.Field>
+      <form.Field name="objectName">
+        {(field) => (
+          <label>
+            <span>Object name</span>
+            <input
+              aria-label="Object name"
+              value={field.state.value}
+              onBlur={field.handleBlur}
+              onChange={(event) => field.handleChange(event.target.value)}
+            />
+          </label>
+        )}
+      </form.Field>
+      <div className="workflow-filter-actions">
+        <button className="button button-secondary button-small" type="submit">
+          Apply result filters
+        </button>
+        <button
+          className="text-action"
+          type="button"
+          onClick={() => {
+            form.reset();
+            onApply({});
+          }}
+        >
+          Clear
+        </button>
+      </div>
+      <SourceFilterNotice unavailable={sourceChoices.isUnavailable} />
+    </form></WorkflowFilters>
+  );
+}

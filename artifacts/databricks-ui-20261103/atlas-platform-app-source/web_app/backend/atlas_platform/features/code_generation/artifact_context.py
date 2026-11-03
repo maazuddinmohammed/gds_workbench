@@ -1,0 +1,31 @@
+"""Applied Generated Code context for one Code Generation target."""
+
+from typing import Literal
+
+from atlas_mcp.domain.modeling_records import (
+    GeneratedCodeRecord,
+    GeneratedCodeSourceSystemRecord,
+)
+from pydantic import BaseModel, ConfigDict, Field
+
+type ModeledEntityType = Literal["logical_entity", "dimensional_entity"]
+
+
+class CodeGenerationArtifactContext(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    target_ref: str = Field(pattern=r"^[a-z][a-z0-9_]{0,99}$")
+    modeled_entity_id: int = Field(gt=0, repr=False)
+    code_input_digest: str = Field(pattern=r"^[0-9a-f]{64}$", repr=False)
+    modeled_entity_type: ModeledEntityType
+    modeled_entity_schema_name: str = Field(min_length=1, max_length=400)
+    modeled_entity_name: str = Field(min_length=1, max_length=255)
+    source_system_codes: tuple[str, ...] = Field(min_length=1)
+    applied_generated_code: tuple[GeneratedCodeRecord, ...] = Field(
+        default=(),
+    )
+    applied_generated_code_source_systems: tuple[GeneratedCodeSourceSystemRecord, ...] = Field(
+        default=()
+    )
+    current_artifact_names: tuple[str, ...] = ()
+    preserved_artifact_names: tuple[str, ...] = ()

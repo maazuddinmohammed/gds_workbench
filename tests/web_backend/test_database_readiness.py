@@ -72,6 +72,55 @@ async def test_readiness_accepts_a_random_fixture_login_with_exact_web_posture(
     assert readiness == ReadinessRecord(ready=True, code="ready")
 
 
+@pytest.fixture
+def isolated_reference_postgres() -> Iterator[DisposablePostgres]:
+    yield from disposable_postgres()
+
+
+@pytest.mark.asyncio
+async def test_custom_variable_cannot_replace_one_modes_required_mapping_basis(
+    isolated_reference_postgres: DisposablePostgres,
+) -> None:
+    with isolated_reference_postgres.connect_owner() as connection:
+        connection.execute(cast(LiteralString, APPLICATION_REFERENCE_SEED.read_text("utf-8")))
+        row = connection.execute(
+            """
+            INSERT INTO application.workflow_stage_variable (
+                workflow_stage_id, workflow_stage_variable_name,
+                workflow_stage_variable_resolver_key,
+                workflow_stage_variable_data_type, workflow_stage_variable_description,
+                workflow_stage_variable_order
+            )
+            SELECT workflow_stage_id, 'custom_input', 'custom.input', 'text', 'Custom input', 990
+              FROM application.workflow_stage
+             WHERE project_workflow = 'mapping' AND workflow_execution_mode = 'one_shot'
+               AND workflow_stage_code = 'mapping_authoring'
+            RETURNING workflow_stage_id
+            """
+        ).fetchone()
+        assert row is not None
+
+    assert await _readiness(isolated_reference_postgres) == ReadinessRecord(
+        ready=True, code="ready"
+    )
+
+    # Tool-assisted Mapping still has mapping_basis; the extra active variable
+    # also restores the original active row count. Neither supplies the missing input.
+    with isolated_reference_postgres.connect_owner() as connection:
+        result = connection.execute(
+            """
+            UPDATE application.workflow_stage_variable SET is_active = FALSE
+             WHERE workflow_stage_id = %s AND workflow_stage_variable_name = 'mapping_basis'
+            """,
+            (row["workflow_stage_id"],),
+        )
+        assert result.rowcount == 1
+
+    assert await _readiness(isolated_reference_postgres) == ReadinessRecord(
+        ready=False, code="database_schema_unavailable"
+    )
+
+
 @pytest.mark.parametrize(
     "owner_posture",
     ["runtime_role", "column_privileges", "no_schema", "missing_select", "no_update"],

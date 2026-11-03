@@ -1,0 +1,1050 @@
+import { useContext, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
+import { createPortal } from "react-dom";
+import {
+  useInfiniteQuery,
+  useIsFetching,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+
+import { ApiError } from "../../core/http";
+import { formatRequiredDateTime as formatDateTime } from "../../shared/presentation";
+import {
+  workflowRunQueryKeys,
+  type ProjectWorkflow,
+  type WorkflowDraftReview,
+  type WorkflowRunDetail,
+  type WorkflowRunMonitorApi,
+  type WorkflowRunRecord,
+} from "./api";
+import {
+  isActiveRun,
+  isPartialMappingRun,
+  RunStateBadge,
+  WorkflowEventProgress,
+  workflowStageLabel,
+  WorkflowRunExecution,
+  WorkflowRunTiming,
+  workflowRunDuration,
+} from "./presentation";
+import { MetadataEnrichmentResults } from "../metadata_enrichment/MetadataEnrichmentResults";
+import { enrichmentResultKey, type MetadataEnrichmentTransport } from "../metadata_enrichment/api";
+import { CancelWorkflowRun } from "./CancelWorkflowRun";
+import { FailedWorkflowDraft } from "./FailedWorkflowDraft";
+import { WorkflowTokenUsage } from "./WorkflowTokenUsage";
+import { WorkflowActivityPanel, WorkflowCommandContext } from "./WorkflowCommandCenter";
+import type { WorkflowRunFilterState } from "./api";
+
+type DraftWorkflow = Extract<
+  ProjectWorkflow,
+  | "metadata_enrichment"
+  | "analysis"
+  | "subject_area"
+  | "logical"
+  | "dimensional"
+  | "mapping"
+  | "code_generation"
+  | "validation"
+>;
+
+const WORKFLOW_EVENT_PAGE_SIZE = 200;
+
+export function WorkflowRunMonitor({
+  api,
+  tenantId,
+  projectId,
+  projectRevision,
+  workflow,
+  hasTenantLock,
+  focusRunId,
+  onApplied,
+  enrichmentApi,
+}: {
+  api: WorkflowRunMonitorApi;
+  enrichmentApi?: Pick<MetadataEnrichmentTransport, "readMetadataEnrichmentResults">;
+  tenantId: number;
+  projectId: number;
+  projectRevision: number;
+  workflow: DraftWorkflow;
+  hasTenantLock: boolean;
+  focusRunId: number | null;
+  onApplied: () => Promise<void>;
+}) {
+  const commandCenter = useContext(WorkflowCommandContext) !== null;
+  const [runState, setRunState] = useState<WorkflowRunFilterState>("");
+  const queryClient = useQueryClient();
+  const monitorBodyId = useId();
+  const [expanded, setExpanded] = useState(focusRunId !== null || (!commandCenter && (workflow === "analysis" || workflow === "metadata_enrichment")));
+  const [selectedRunId, setSelectedRunId] = useState<number | null>(focusRunId);
+  const [runIdInput, setRunIdInput] = useState(focusRunId === null ? "" : String(focusRunId));
+  const [confirmApply, setConfirmApply] = useState(false);
+  const applyIdempotencyKey = useRef<string | null>(null);
+  const applyTrigger = useRef<HTMLButtonElement>(null);
+  const label = workflowLabel(workflow);
+  const recentKey = [...workflowRunQueryKeys.recent(tenantId, projectId, workflow), ...(runState ? [runState] : [])];
+  const recentQuery = useInfiniteQuery({
+    queryKey: recentKey,
+    queryFn: ({ pageParam }) => api.listWorkflowRuns(
+      tenantId,
+      projectId,
+      workflow,
+      runState,
+      5,
+      pageParam,
+    ),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+  });
+  const recentRuns = recentQuery.data?.pages.flatMap((page) => page.items) ?? [];
+
+  useEffect(() => {
+    applyIdempotencyKey.current = null;
+    setSelectedRunId(focusRunId);
+    setRunIdInput(focusRunId === null ? "" : String(focusRunId));
+    if (focusRunId !== null || (!commandCenter && (workflow === "analysis" || workflow === "metadata_enrichment"))) {
+      setExpanded(true);
+    }
+    if (focusRunId !== null) {
+      void Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: workflowRunQueryKeys.recent(tenantId, projectId, workflow),
+        }),
+        queryClient.invalidateQueries({ queryKey: ["project-overview", tenantId, projectId] }),
+      ]);
+    }
+  }, [commandCenter, focusRunId, projectId, queryClient, tenantId, workflow]);
+  useEffect(() => {
+    if (selectedRunId === null && recentRuns[0]) {
+      setSelectedRunId(recentRuns[0].workflow_run_id);
+      setRunIdInput(String(recentRuns[0].workflow_run_id));
+    }
+  }, [recentRuns, selectedRunId]);
+
+  const runQuery = useQuery({
+    queryKey: workflowRunQueryKeys.detail(tenantId, projectId, selectedRunId ?? 0),
+    queryFn: () => api.readWorkflowRun(tenantId, projectId, selectedRunId ?? 0),
+    enabled: selectedRunId !== null && (!commandCenter || expanded),
+  });
+  const eventsQuery = useInfiniteQuery({
+    queryKey: workflowRunQueryKeys.events(tenantId, projectId, selectedRunId ?? 0),
+    queryFn: ({ pageParam }) => api.listWorkflowRunEvents(
+      tenantId,
+      projectId,
+      selectedRunId ?? 0,
+      pageParam,
+    ),
+    enabled: selectedRunId !== null && (!commandCenter || expanded),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => (
+      lastPage.items.length === WORKFLOW_EVENT_PAGE_SIZE
+        ? lastPage.next_after_sequence
+        : undefined
+    ),
+  });
+  const events = eventsQuery.data?.pages.flatMap((page) => page.items) ?? [];
+  useEffect(() => {
+    if ((!commandCenter || expanded) && eventsQuery.hasNextPage && !eventsQuery.isFetchingNextPage) {
+      void eventsQuery.fetchNextPage();
+    }
+  }, [commandCenter, expanded, eventsQuery.fetchNextPage, eventsQuery.hasNextPage, eventsQuery.isFetchingNextPage]);
+  const run = workflow === "metadata_enrichment" && runQuery.data?.project_workflow !== workflow
+    ? undefined : runQuery.data;
+  const validatedDraft = workflow !== "metadata_enrichment" && isValidatedDraft(run) ? run : null;
+  const retainedDraft = workflow !== "metadata_enrichment" && Boolean(run?.workflow_run_state === "failed"
+    && run.project_change_set_status === "active" && run.project_change_set_id && run.draft_revision);
+  const draftReviewQuery = useQuery({
+    queryKey: workflowRunQueryKeys.draftReview(
+      tenantId,
+      projectId,
+      run?.project_change_set_id ?? "none",
+    ),
+    queryFn: () => api.readWorkflowDraftReview(
+      tenantId,
+      projectId,
+      run?.project_change_set_id ?? "",
+    ),
+    enabled: (Boolean(validatedDraft) || retainedDraft) && (!commandCenter || expanded),
+  });
+  const [, setExpiryTick] = useState(0);
+  const reviewExpired = isDraftReviewExpired(draftReviewQuery.data ?? null);
+  useEffect(() => {
+    const expiresAt = Date.parse(draftReviewQuery.data?.expires_at ?? "");
+    if (!Number.isFinite(expiresAt)) return;
+    const remaining = expiresAt - Date.now();
+    if (remaining <= 0) {
+      setExpiryTick((tick) => tick + 1);
+      return;
+    }
+    const timeout = globalThis.setTimeout(
+      () => setExpiryTick((tick) => tick + 1),
+      Math.min(remaining + 25, 2_147_483_647),
+    );
+    return () => globalThis.clearTimeout(timeout);
+  }, [draftReviewQuery.data?.expires_at]);
+  const reviewMatches = Boolean(
+    validatedDraft
+    && draftReviewQuery.data
+    && isAuthoritativeReview(validatedDraft, draftReviewQuery.data),
+  );
+  const canApply = validatedDraft !== null && reviewMatches;
+  const applyMutation = useMutation({
+    mutationFn: async () => {
+      if (!validatedDraft || !reviewMatches || !applyIdempotencyKey.current) {
+        throw new Error("Validated draft is unavailable.");
+      }
+      return api.applyWorkflowDraft(
+        tenantId,
+        projectId,
+        validatedDraft.workflow_run_id,
+        projectRevision,
+        validatedDraft.draft_revision,
+        validatedDraft.candidate_digest,
+        applyIdempotencyKey.current,
+      );
+    },
+    onSuccess: async (result) => {
+      setConfirmApply(false);
+      applyIdempotencyKey.current = null;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: recentKey }),
+        queryClient.invalidateQueries({
+          queryKey: workflowRunQueryKeys.detail(tenantId, projectId, result.workflow_run_id),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: workflowRunQueryKeys.draftReview(
+            tenantId,
+            projectId,
+            result.project_change_set_id,
+          ),
+        }),
+        queryClient.invalidateQueries({ queryKey: ["project", tenantId, projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["project-overview", tenantId, projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
+        onApplied(),
+      ]);
+      setExpanded(false);
+    },
+    onError: (error) => {
+      if (!isAmbiguousTransportFailure(error)) applyIdempotencyKey.current = null;
+    },
+  });
+  const selectRun = (workflowRunId: number) => {
+    if (workflowRunId !== selectedRunId) applyIdempotencyKey.current = null;
+    setSelectedRunId(workflowRunId);
+    setRunIdInput(String(workflowRunId));
+    setConfirmApply(false);
+    applyMutation.reset();
+  };
+  const parsedRunId = Number(runIdInput);
+  const runIdIsValid = Number.isSafeInteger(parsedRunId) && parsedRunId > 0;
+  const enrichmentResultsFetching = useIsFetching({
+    queryKey: enrichmentResultKey(tenantId, projectId, selectedRunId ?? 0),
+  });
+  const refreshing = enrichmentResultsFetching > 0 || recentQuery.isFetching
+    || runQuery.isFetching
+    || eventsQuery.isFetching
+    || draftReviewQuery.isFetching;
+  const refreshAll = async () => {
+    const refreshes: Promise<unknown>[] = [
+      recentQuery.refetch(),
+      queryClient.invalidateQueries({ queryKey: ["project-overview", tenantId, projectId] }),
+    ];
+    // Enrichment saves during execution, so refreshing runs must also reload saved values.
+    if (workflow === "metadata_enrichment") refreshes.push(onApplied());
+    if (selectedRunId !== null) {
+      refreshes.push(runQuery.refetch(), eventsQuery.refetch());
+      if (workflow === "metadata_enrichment") {
+        refreshes.push(queryClient.invalidateQueries({
+          queryKey: enrichmentResultKey(tenantId, projectId, selectedRunId),
+        }));
+      }
+    }
+    if (validatedDraft || retainedDraft) {
+      refreshes.push(draftReviewQuery.refetch());
+      refreshes.push(queryClient.invalidateQueries({
+        queryKey: ["workflow-draft-records", tenantId, projectId, run?.project_change_set_id],
+      }));
+    }
+    await Promise.all(refreshes);
+  };
+
+  const monitor = (
+    <section
+      className={`workflow-run-monitor${expanded ? "" : " is-collapsed"}`}
+      aria-label={`${label} recent runs`}
+    >
+      {!commandCenter ? <header className="workflow-run-monitor-header">
+        <div>
+          <small>Workflow activity</small>
+          <h2>Recent {label} runs</h2>
+          {!expanded && recentRuns[0] ? (
+            <span
+              className="workflow-run-monitor-summary"
+              aria-label={`Latest ${label} run`}
+            >
+              <strong>Run {recentRuns[0].workflow_run_id}</strong>
+              <RunStateBadge state={recentRuns[0].workflow_run_state} partial={isPartialMappingRun(recentRuns[0])} />
+              {applyMutation.data?.workflow_run_id === recentRuns[0].workflow_run_id ? (
+                <span className="workflow-run-monitor-applied">Draft applied</span>
+              ) : null}
+            </span>
+          ) : null}
+        </div>
+        <div className="workflow-run-monitor-actions">
+          <button
+            className="button button-secondary button-small"
+            type="button"
+            disabled={refreshing}
+            onClick={() => void refreshAll()}
+          >
+            {refreshing ? "Refreshing…" : "Refresh runs"}
+          </button>
+          <button
+            className="button button-secondary button-small"
+            type="button"
+            aria-label={expanded
+              ? `Hide ${label} run activity`
+              : `Show ${label} run activity`}
+            aria-controls={monitorBodyId}
+            aria-expanded={expanded}
+            onClick={() => setExpanded((current) => !current)}
+          >
+            {expanded ? "Hide activity" : "Show activity"}
+          </button>
+        </div>
+      </header> : null}
+
+      <div id={monitorBodyId} className="workflow-run-monitor-body" hidden={!expanded}>
+        {commandCenter ? <label className="workflow-run-state-filter"><span>Run state</span>
+          <select aria-label="Run state" value={runState} onChange={(event) => {
+            setRunState(event.target.value as WorkflowRunFilterState); setSelectedRunId(null); setRunIdInput("");
+          }}>
+            <option value="">All states</option>
+            <option value="queued">Queued</option><option value="running">Running</option>
+            <option value="completed">Completed</option><option value="completed_with_repair">Completed with repair</option>
+            <option value="failed">Failed</option><option value="cancelled">Cancelled</option>
+          </select>
+        </label> : null}
+        <div className="workflow-run-monitor-layout">
+          <div className="workflow-run-browser">
+            <form
+              className="workflow-run-id-navigation"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (runIdIsValid) selectRun(parsedRunId);
+              }}
+            >
+              <label>
+                <span>Run ID</span>
+                <input
+                  aria-label="Run ID"
+                  inputMode="numeric"
+                  min="1"
+                  step="1"
+                  type="number"
+                  value={runIdInput}
+                  onChange={(event) => setRunIdInput(event.target.value)}
+                />
+              </label>
+              <button
+                className="button button-secondary button-small"
+                type="submit"
+                disabled={!runIdIsValid}
+              >
+                Open run
+              </button>
+            </form>
+            {recentQuery.isPending ? <div className="surface-state compact" aria-busy="true">Loading recent runs…</div>
+              : recentQuery.isError ? <div className="surface-state is-error compact" role="alert">Recent runs could not be loaded.</div>
+                : recentRuns.length === 0 ? <div className="empty-state compact">No recent {label} runs.</div> : null}
+            <ol className="workflow-recent-runs" aria-label={`${label} run list`}>
+              {recentRuns.map((item) => (
+                <li key={item.workflow_run_id}>
+                  <button
+                    className={selectedRunId === item.workflow_run_id ? "is-selected" : ""}
+                    type="button"
+                    aria-pressed={selectedRunId === item.workflow_run_id}
+                    onClick={() => selectRun(item.workflow_run_id)}
+                  >
+                    <span>
+                      <strong>Run {item.workflow_run_id}</strong>
+                      <small>{runKind(item, workflow)}</small>
+                      <small>{formatDateTime(item.created_at)} · {workflowRunDuration(item)}</small>
+                    </span>
+                    <RunStateBadge state={item.workflow_run_state} partial={isPartialMappingRun(item)} />
+                  </button>
+                </li>
+              ))}
+            </ol>
+            {recentQuery.hasNextPage ? (
+              <button
+                className="workflow-runs-load-more"
+                type="button"
+                disabled={recentQuery.isFetchingNextPage}
+                onClick={() => void recentQuery.fetchNextPage()}
+              >
+                {recentQuery.isFetchingNextPage ? "Loading more…" : "Load more runs"}
+              </button>
+            ) : null}
+          </div>
+          <div className="workflow-run-monitor-detail">
+            {selectedRunId === null ? <div className="empty-state compact">Select a run to view its details.</div> : runQuery.isPending ? (
+              <div className="surface-state compact" aria-busy="true">Loading run details…</div>
+            ) : runQuery.isError || !run ? (
+              <div className="surface-state is-error compact" role="alert">
+                Run details could not be loaded.
+              </div>
+            ) : (
+              <>
+              <CancelWorkflowRun key={`cancel-${run.workflow_run_id}`} api={api} tenantId={tenantId}
+                projectId={projectId} run={run} hasTenantLock={hasTenantLock} onCancelled={refreshAll} />
+              <WorkflowRunDetailView
+                key={run.workflow_run_id}
+                tabbed={commandCenter}
+                run={run}
+                physicalMetadata={workflow === "metadata_enrichment"}
+                enrichmentResults={workflow === "metadata_enrichment" && enrichmentApi
+                && ["completed", "completed_with_repair"].includes(run.workflow_run_state) ? (
+                <MetadataEnrichmentResults key={`${tenantId}-${projectId}-${run.workflow_run_id}`}
+                  api={enrichmentApi} tenantId={tenantId} projectId={projectId} runId={run.workflow_run_id} />
+              ) : null}
+                events={events}
+                eventsPending={eventsQuery.isPending}
+                eventsLoadingMore={eventsQuery.isFetchingNextPage}
+                eventsError={eventsQuery.isError}
+                draftReview={draftReviewQuery.data ?? null}
+                draftReviewPending={draftReviewQuery.isPending && Boolean(validatedDraft)}
+                draftReviewError={draftReviewQuery.isError}
+                draftRecovery={retainedDraft ? (
+                  <FailedWorkflowDraft
+                    key={`${run.workflow_run_id}-${run.draft_revision}`}
+                    api={api}
+                    tenantId={tenantId}
+                    projectId={projectId}
+                    run={run}
+                    review={draftReviewQuery.data ?? null}
+                    isPending={draftReviewQuery.isPending}
+                    isError={draftReviewQuery.isError}
+                    expired={reviewExpired}
+                  />
+                ) : null}
+                reviewMatches={reviewMatches}
+                reviewExpired={reviewExpired}
+                hasTenantLock={hasTenantLock}
+                canApply={canApply}
+                applyPending={applyMutation.isPending}
+                applyError={confirmApply ? null : applyMutation.error}
+                appliedRunId={applyMutation.data?.workflow_run_id ?? null}
+                applyTriggerRef={applyTrigger}
+                onApply={() => {
+                  applyMutation.reset();
+                  applyIdempotencyKey.current ??= globalThis.crypto.randomUUID();
+                  setConfirmApply(true);
+                }}
+              />
+              </>
+            )}
+          </div>
+          </div>
+      </div>
+
+      {confirmApply && validatedDraft && canApply ? (
+        <ApplyDraftConfirmation
+          label={modelRunName(workflow, validatedDraft.workflow_operation) ?? label}
+          runId={validatedDraft.workflow_run_id}
+          draftRevision={validatedDraft.draft_revision}
+          failedMappingPairs={isPartialMappingRun(validatedDraft)
+            ? validatedDraft.mapping_outcome?.failed_pair_count ?? 0 : 0}
+          missingMappingPairs={validatedDraft.project_workflow === "mapping"
+            ? (validatedDraft.mapping_outcome?.partial_pair_count ?? 0)
+              + (validatedDraft.mapping_outcome?.empty_pair_count ?? 0) : 0}
+          isPending={applyMutation.isPending}
+          error={applyMutation.error}
+          returnFocusRef={applyTrigger}
+          onClose={() => setConfirmApply(false)}
+          onConfirm={() => applyMutation.mutate()}
+        />
+      ) : null}
+    </section>
+  );
+  return commandCenter ? <WorkflowActivityPanel label={label} open={expanded} onOpenChange={setExpanded}
+    actions={<button className="button button-secondary button-small" type="button" disabled={refreshing}
+      onClick={() => void refreshAll()}>{refreshing ? "Refreshing…" : "Refresh runs"}</button>}>
+    {monitor}
+  </WorkflowActivityPanel> : monitor;
+}
+
+function WorkflowRunDetailView({
+  tabbed,
+  run,
+  physicalMetadata,
+  enrichmentResults,
+  events,
+  eventsPending,
+  eventsLoadingMore,
+  eventsError,
+  draftReview,
+  draftReviewPending,
+  draftReviewError,
+  draftRecovery,
+  reviewMatches,
+  reviewExpired,
+  hasTenantLock,
+  canApply,
+  applyPending,
+  applyError,
+  appliedRunId,
+  applyTriggerRef,
+  onApply,
+}: {
+  tabbed: boolean;
+  run: WorkflowRunDetail;
+  physicalMetadata: boolean;
+  enrichmentResults: ReactNode;
+  events: Awaited<ReturnType<WorkflowRunMonitorApi["listWorkflowRunEvents"]>>["items"];
+  eventsPending: boolean;
+  eventsLoadingMore: boolean;
+  eventsError: boolean;
+  draftReview: WorkflowDraftReview | null;
+  draftReviewPending: boolean;
+  draftReviewError: boolean;
+  draftRecovery: ReactNode;
+  reviewMatches: boolean;
+  reviewExpired: boolean;
+  hasTenantLock: boolean;
+  canApply: boolean;
+  applyPending: boolean;
+  applyError: Error | null;
+  appliedRunId: number | null;
+  applyTriggerRef: RefObject<HTMLButtonElement | null>;
+  onApply: () => void;
+}) {
+  const [tab, setTab] = useState("Overview");
+  const partialMapping = isPartialMappingRun(run);
+  const mappingOutcome = run.project_workflow === "mapping" ? run.mapping_outcome : null;
+  const incompletePairs = mappingOutcome?.partial_pair_count ?? 0;
+  const emptyPairs = mappingOutcome?.empty_pair_count ?? 0;
+  const mappingFailures = run.mapping_failures ?? [];
+  const failureEvent = [...events]
+    .reverse()
+    .find((event) => event.status === "failed" || event.status === "blocked");
+  const agentIdentity = run.agent_provider_code && run.agent_model_code
+    ? `${run.agent_provider_code} · ${run.agent_model_code}`
+    : run.agent_provider_code ?? run.agent_model_code ?? "Not recorded";
+  return (
+    <article aria-label={`Run ${run.workflow_run_id} details`}>
+      <header className="workflow-run-detail-header">
+        <div>
+          <small>Run {run.workflow_run_id}</small>
+          <strong>{runKind(run, run.project_workflow)}</strong>
+        </div>
+        <RunStateBadge state={run.workflow_run_state} partial={partialMapping} />
+      </header>
+      <WorkflowRunTiming run={run} />
+      <WorkflowRunExecution run={run} />
+      {tabbed ? <nav className="workspace-tabs workflow-activity-tabs" aria-label="Run detail sections">
+        {["Overview", "Activity", "Usage", physicalMetadata ? "Results" : "Draft"].map((name) => <button key={name} type="button"
+          aria-pressed={tab === name} onClick={() => setTab(name)}>{name}</button>)}
+      </nav> : null}
+      <div hidden={tabbed && tab !== "Overview"}>
+      <dl className="workflow-run-facts">
+        <div><dt>Created</dt><dd>{formatDateTime(run.created_at)}</dd></div>
+        <div><dt>Actor</dt><dd>{run.actor_display_name}</dd></div>
+        <div><dt>{run.project_workflow === "validation" ? "Systems" : run.project_workflow === "dimensional" ? "Entities" : "Objects"}</dt><dd>{run.selected_scope_count}</dd></div>
+        <div><dt>Mode</dt><dd>{run.workflow_execution_mode?.replaceAll("_", " ") ?? (["code_generation", "validation"].includes(run.project_workflow) ? "Configured generator" : "Deterministic")}</dd></div>
+      </dl>
+
+      {run.workflow_run_state === "failed" ? (
+        <section
+          className="workflow-run-failure"
+          role="alert"
+          aria-label="Run failure details"
+        >
+          <header>
+            <strong>Failure reason</strong>
+            <code>{run.failure_code?.replaceAll("_", " ") ?? "run failed"}</code>
+          </header>
+          <p>{run.failure_message ?? "No additional safe failure detail was recorded."}</p>
+          <dl>
+            <div>
+              <dt>Last stage</dt>
+              <dd>{failureEvent ? workflowStageLabel(failureEvent.stage) : "Not recorded"}</dd>
+            </div>
+            <div>
+              <dt>Attempt</dt>
+              <dd>{failureEvent ? `Attempt ${failureEvent.attempt}` : "Not recorded"}</dd>
+            </div>
+            <div>
+              <dt>Agent</dt>
+              <dd>{agentIdentity}</dd>
+            </div>
+          </dl>
+          <small>Reference {run.correlation_id}</small>
+        </section>
+      ) : null}
+
+      {tabbed ? <button type="button" className="button button-secondary button-small"
+        onClick={() => setTab(physicalMetadata ? "Results" : "Draft")}>{physicalMetadata ? "View results" : "Review draft"}</button> : null}
+      </div>
+      {!physicalMetadata ? <div hidden={tabbed && tab !== "Draft"}>
+      {mappingOutcome && (mappingOutcome.failed_pair_count > 0 || incompletePairs > 0 || emptyPairs > 0) ? (
+        <section className="workflow-draft-review workflow-mapping-outcome" aria-label="Mapping pair outcomes">
+          <header><strong>{isActiveRun(run) ? "Mapping generation is underway"
+            : partialMapping ? "Successful mappings are available" : "Mappings need attention"}</strong></header>
+          <p>
+            {mappingOutcome.completed_pair_count + incompletePairs} generated
+            {incompletePairs > 0 ? ` · ${incompletePairs} incomplete` : ""}
+            {mappingOutcome.failed_pair_count > 0 ? ` · ${mappingOutcome.failed_pair_count} failed` : ""}
+            {emptyPairs > 0 ? ` · ${emptyPairs} without output` : ""}
+            {mappingOutcome.preserved_pair_count > 0 ? ` · ${mappingOutcome.preserved_pair_count} preserved` : ""}
+            {mappingOutcome.no_source_pair_count > 0 ? ` · ${mappingOutcome.no_source_pair_count} without an applicable source` : ""}
+          </p>
+          {incompletePairs > 0 || emptyPairs > 0 ? <p>{isActiveRun(run)
+            ? "Generation continues for the remaining pairs. Review the results when the run finishes."
+            : run.project_change_set_status === "applied" || appliedRunId === run.workflow_run_id
+              ? "Available mappings applied. Missing selected transformations remain blank."
+              : run.project_change_set_status === "validated"
+                ? "Apply the available mappings. Missing selected transformations will be blank."
+                : incompletePairs > 0 ? "Incomplete pairs have missing transformations. Review this run before generating again."
+                  : "No mapping output was generated for the empty pairs."}
+            {mappingOutcome.failed_pair_count > 0 ? " Failed pairs remain unchanged." : ""}
+          </p> : <p>{isActiveRun(run)
+            ? "Generation continues for the remaining pairs. Review the results when the run finishes."
+            : partialMapping
+            ? run.project_change_set_status === "applied" || appliedRunId === run.workflow_run_id
+              ? "Successful mappings applied. Failed pairs remain unchanged."
+              : run.project_change_set_status === "validated"
+                ? "Apply the successful mappings. Failed pairs remain unchanged; resolve their issues before running them again."
+                : "Failed pairs remain unchanged. Resolve their issues before running them again."
+            : "No successful draft is available. Resolve the issues below before running again."}</p>}
+          {mappingFailures.length > 0 ? (
+            <div className="workflow-draft-review-scroll" role="region" aria-label="Failed Mapping pairs" tabIndex={0}>
+              <table aria-label="Failed Mapping pairs">
+                <thead><tr><th>System</th><th>Schema</th><th>Entity</th><th>Issue</th></tr></thead>
+                <tbody>{mappingFailures.map((failure) => (
+                  <tr key={`${failure.source_system_id}-${failure.modeled_entity_id}`}>
+                    <td>{failure.system_code}</td><td>{failure.entity_schema_name}</td>
+                    <td>{failure.entity_name}</td><td>{failure.message}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          ) : mappingOutcome.failed_pair_count > 0 ? <p>Failure details are unavailable. Refresh runs to reload them.</p> : null}
+          {run.mapping_failures_truncated ? <small>
+            Showing {mappingFailures.length} of {mappingOutcome.failed_pair_count} failed pairs. The summary includes all failures.
+          </small> : null}
+        </section>
+      ) : null}
+      {draftRecovery}
+      {run.project_change_set_status === "validated" ? (
+        <AuthoritativeDraftReview
+          run={run}
+          review={draftReview}
+          isPending={draftReviewPending}
+          isError={draftReviewError}
+          matches={reviewMatches}
+          expired={reviewExpired}
+        />
+      ) : null}
+
+      <section className="workflow-draft-status" aria-label="Validated draft status">
+        <div>
+          <strong>{draftStatus(run)}</strong>
+          {run.draft_revision && run.candidate_digest ? (
+            <small>
+              Draft r{run.draft_revision} · digest {run.candidate_digest.slice(0, 12)}…
+            </small>
+          ) : (
+            <small>Apply appears only after a completed authoring run validates its draft.</small>
+          )}
+        </div>
+        {canApply ? (
+          <button
+            ref={applyTriggerRef}
+            className="button button-accent button-small"
+            type="button"
+            disabled={!hasTenantLock || applyPending}
+            title={hasTenantLock
+              ? "Review and apply this exact validated draft"
+              : "Owned Tenant Lock required"}
+            onClick={onApply}
+          >
+            {applyPending ? "Applying…" : partialMapping ? "Apply successful mappings" : "Apply validated draft"}
+          </button>
+        ) : null}
+      </section>
+      {applyError ? (
+        <p className="inline-error" role="alert">{safeApplyFailure(applyError)}</p>
+      ) : null}
+      {appliedRunId === run.workflow_run_id ? (
+        <p className="inline-success" role="status">Validated draft applied.</p>
+      ) : null}
+
+      </div> : null}
+
+      <div hidden={tabbed && tab !== "Results"}>{!tabbed || tab === "Results" ? enrichmentResults : null}</div>
+      <div hidden={tabbed && tab !== "Usage"}><WorkflowTokenUsage usage={run.token_usage} /></div>
+      <section className="workflow-run-events" hidden={tabbed && tab !== "Activity"} aria-labelledby={`run-${run.workflow_run_id}-events`}>
+        <h3 id={`run-${run.workflow_run_id}-events`}>Events</h3>
+        {eventsPending ? (
+          <div className="surface-state compact" aria-busy="true">Loading events…</div>
+        ) : eventsError ? (
+          <div className="surface-state is-error compact" role="alert">
+            Run events could not be loaded.
+          </div>
+        ) : events.length === 0 ? (
+          <div className="empty-state compact">
+            No run events yet. Use Refresh runs to check again.
+          </div>
+        ) : (
+          <>
+            <ol>
+              {events.map((event) => (
+                <li key={event.sequence}>
+                  <span className={`status-badge is-${event.status}`}>{event.status}</span>
+                  <div>
+                    <strong>{workflowStageLabel(event.stage)}</strong>
+                    <p>{event.message}</p>
+                    <WorkflowEventProgress event={event} />
+                    <small className="workflow-event-meta">
+                      <span>Event {event.sequence} · Attempt {event.attempt}</span>
+                      {event.current !== null && event.total !== null ? (
+                        <span>{event.current} of {event.total}</span>
+                      ) : null}
+                      {event.finding_count > 0 ? (
+                        <span>
+                          {event.finding_count} {event.finding_count === 1 ? "finding" : "findings"}
+                        </span>
+                      ) : null}
+                    </small>
+                  </div>
+                  <time dateTime={event.created_at}>{formatDateTime(event.created_at)}</time>
+                </li>
+              ))}
+            </ol>
+            {eventsLoadingMore ? (
+              <p className="workflow-events-loading" role="status">Loading additional events…</p>
+            ) : null}
+          </>
+        )}
+      </section>
+    </article>
+  );
+}
+
+function AuthoritativeDraftReview({
+  run,
+  review,
+  isPending,
+  isError,
+  matches,
+  expired,
+}: {
+  run: WorkflowRunDetail;
+  review: WorkflowDraftReview | null;
+  isPending: boolean;
+  isError: boolean;
+  matches: boolean;
+  expired: boolean;
+}) {
+  if (isPending) {
+    return (
+      <section className="workflow-draft-review" aria-label="Authoritative draft review">
+        <div className="surface-state compact" aria-busy="true">Loading validated draft review…</div>
+      </section>
+    );
+  }
+  if (expired) {
+    return (
+      <section className="workflow-draft-review" aria-label="Authoritative draft review">
+        <p className="inline-error" role="alert">
+          This validated draft has expired. Apply is disabled.
+        </p>
+      </section>
+    );
+  }
+  if (isError || !review || !matches || !review.validation_outcome) {
+    return (
+      <section className="workflow-draft-review" aria-label="Authoritative draft review">
+        <p className="inline-error" role="alert">
+          The authoritative draft review is unavailable or no longer matches this Run. Apply is disabled.
+        </p>
+      </section>
+    );
+  }
+  const actions = new Map(review.validation_outcome.action_review.map((item) => (
+    [item.dataset, item] as const
+  )));
+  const datasets = new Set([
+    ...review.dataset_counts.map((item) => item.dataset),
+    ...review.validation_outcome.action_review.map((item) => item.dataset),
+  ]);
+  return (
+    <section className="workflow-draft-review" aria-label="Authoritative draft review">
+      <header>
+        <div>
+          <strong>Validated candidate review</strong>
+          <small>
+            {review.validation_outcome.staged_record_count} staged records · {review.validation_outcome.error_count} errors
+          </small>
+        </div>
+        <code title="Candidate digest">{run.candidate_digest}</code>
+      </header>
+      <div className="workflow-draft-review-scroll">
+        <table aria-label="Validated draft action counts">
+          <thead>
+            <tr>
+              <th>Dataset</th>
+              <th>Staged</th>
+              <th>Insert</th>
+              <th>Update</th>
+              <th>Deactivate</th>
+              <th>Reactivate</th>
+              <th>No change</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...datasets].sort().map((dataset) => {
+              const action = actions.get(dataset);
+              return (
+                <tr key={dataset}>
+                  <td>{dataset.replaceAll("_", " ")}</td>
+                  <td>{review.dataset_counts.find((item) => item.dataset === dataset)?.record_count ?? 0}</td>
+                  <td>{action?.insert_count ?? 0}</td>
+                  <td>{action?.update_count ?? 0}</td>
+                  <td>{action?.deactivate_count ?? 0}</td>
+                  <td>{action?.reactivate_count ?? 0}</td>
+                  <td>{action?.no_change_count ?? 0}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function ApplyDraftConfirmation({
+  label,
+  runId,
+  draftRevision,
+  failedMappingPairs,
+  missingMappingPairs,
+  isPending,
+  error,
+  returnFocusRef,
+  onClose,
+  onConfirm,
+}: {
+  label: string;
+  runId: number;
+  draftRevision: number;
+  failedMappingPairs: number;
+  missingMappingPairs: number;
+  isPending: boolean;
+  error: Error | null;
+  returnFocusRef: RefObject<HTMLButtonElement | null>;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const dialog = useRef<HTMLElement>(null);
+  const portalHost = useRef<HTMLDivElement | null>(null);
+  if (portalHost.current === null) {
+    portalHost.current = document.createElement("div");
+    portalHost.current.dataset.workflowModalHost = "true";
+  }
+  useEffect(() => {
+    const host = portalHost.current;
+    if (!host) return;
+    document.body.append(host);
+    const appRoot = document.getElementById("root");
+    const rootWasInert = appRoot?.hasAttribute("inert") ?? false;
+    const previousAriaHidden = appRoot?.getAttribute("aria-hidden") ?? null;
+    appRoot?.setAttribute("inert", "");
+    appRoot?.setAttribute("aria-hidden", "true");
+    closeButton.current?.focus();
+    return () => {
+      if (appRoot) {
+        if (!rootWasInert) appRoot.removeAttribute("inert");
+        if (previousAriaHidden === null) appRoot.removeAttribute("aria-hidden");
+        else appRoot.setAttribute("aria-hidden", previousAriaHidden);
+      }
+      host.remove();
+      globalThis.queueMicrotask(() => returnFocusRef.current?.focus());
+    };
+  }, [returnFocusRef]);
+  const modal = (
+    <div className="dialog-scrim prompt-dialog-scrim" role="presentation">
+      <section
+        ref={dialog}
+        className="prompt-dialog workflow-draft-confirmation"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="workflow-draft-confirmation-title"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            if (!isPending) onClose();
+            return;
+          }
+          if (event.key !== "Tab") return;
+          const focusable = [...(dialog.current?.querySelectorAll<HTMLElement>(
+            "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), "
+            + "textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+          ) ?? [])];
+          if (focusable.length === 0) {
+            event.preventDefault();
+            return;
+          }
+          const first = focusable[0];
+          const last = focusable.at(-1);
+          if (event.shiftKey && (document.activeElement === first || !dialog.current?.contains(document.activeElement))) {
+            event.preventDefault();
+            last?.focus();
+          } else if (!event.shiftKey && (
+            document.activeElement === last || !dialog.current?.contains(document.activeElement)
+          )) {
+            event.preventDefault();
+            first?.focus();
+          }
+        }}
+      >
+        <header>
+          <div>
+            <small>Governed transition</small>
+            <h2 id="workflow-draft-confirmation-title">{failedMappingPairs > 0 || missingMappingPairs > 0
+              ? "Apply successful mappings?" : `Apply validated ${label} draft?`}</h2>
+          </div>
+          <button
+            ref={closeButton}
+            className="dialog-close"
+            type="button"
+            aria-label="Close draft confirmation"
+            disabled={isPending}
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </header>
+        <p>
+          Run {runId}, draft revision {draftRevision}, will be applied to the Project under the
+          current Tenant Lock. The backend rechecks every revision and digest fence.
+        </p>
+        {failedMappingPairs > 0 ? <p>
+          Only successful mappings in this draft will be applied. {failedMappingPairs} failed {failedMappingPairs === 1 ? "pair remains" : "pairs remain"} unchanged.
+        </p> : null}
+        {missingMappingPairs > 0 ? <p>
+          Missing selected transformations replace previous values with blanks. Locked and unselected mappings remain unchanged.
+        </p> : null}
+        {error ? <p className="inline-error" role="alert">{safeApplyFailure(error)}</p> : null}
+        <footer>
+          <button className="button button-secondary" type="button" disabled={isPending} onClick={onClose}>
+            Cancel
+          </button>
+          <button className="button button-accent" type="button" disabled={isPending} onClick={onConfirm}>
+            {isPending ? "Applying…" : "Apply exact draft"}
+          </button>
+        </footer>
+      </section>
+    </div>
+  );
+  return createPortal(modal, portalHost.current);
+}
+
+function isValidatedDraft(run: WorkflowRunDetail | undefined): run is WorkflowRunDetail & {
+  draft_revision: number;
+  candidate_digest: string;
+} {
+  return Boolean(
+    run
+    && (run.workflow_run_state === "completed" || run.workflow_run_state === "completed_with_repair")
+    && (run.workflow_execution_mode !== null || run.project_workflow === "code_generation" || run.project_workflow === "validation")
+    && run.project_change_set_id
+    && run.project_change_set_status === "validated"
+    && run.draft_revision
+    && run.candidate_digest,
+  );
+}
+
+function isAuthoritativeReview(
+  run: WorkflowRunDetail & { draft_revision: number; candidate_digest: string },
+  review: WorkflowDraftReview,
+): boolean {
+  return review.project_change_set_id === run.project_change_set_id
+    && review.status === "validated"
+    && review.draft_revision === run.draft_revision
+    && review.candidate_digest === run.candidate_digest
+    && review.validation_outcome?.valid === true
+    && review.validation_outcome.error_count === 0
+    && !isDraftReviewExpired(review);
+}
+
+function isDraftReviewExpired(review: WorkflowDraftReview | null): boolean {
+  if (!review) return false;
+  const expiresAt = Date.parse(review.expires_at);
+  return !Number.isFinite(expiresAt) || expiresAt <= Date.now();
+}
+
+function workflowLabel(workflow: DraftWorkflow): string {
+  if (workflow === "metadata_enrichment") return "Metadata enrichment";
+  if (workflow === "validation") return "Validation";
+  if (workflow === "code_generation") return "Code Generation";
+  if (workflow === "subject_area") return "Subject Areas";
+  return workflow.charAt(0).toUpperCase() + workflow.slice(1);
+}
+
+/** Logical and Dimensional runs are named by operation, such as "Logical Build". */
+function modelRunName(workflow: ProjectWorkflow, operation: WorkflowRunRecord["workflow_operation"]): string | null {
+  if ((workflow !== "logical" && workflow !== "dimensional") || !operation) return null;
+  return `${workflow === "logical" ? "Logical" : "Dimensional"} ${operation === "build" ? "Build" : "Optimize"}`;
+}
+
+function runKind(run: Pick<WorkflowRunRecord, "workflow_execution_mode" | "workflow_operation">, workflow: ProjectWorkflow): string {
+  const mode = run.workflow_execution_mode;
+  if (workflow === "metadata_enrichment") return "Physical metadata enrichment";
+  if (workflow === "code_generation") return "SQL generation";
+  if (workflow === "validation") return "Validation authoring";
+  if (workflow === "analysis" && mode === null) return "Deterministic validation";
+  if (workflow === "analysis" && run.workflow_operation === "per_table") return "One table per call · one shot";
+  const modelRun = modelRunName(workflow, run.workflow_operation);
+  if (modelRun) return mode ? `${modelRun} · ${mode.replaceAll("_", " ")}` : modelRun;
+  return mode ? `${mode.replaceAll("_", " ")} authoring` : "Deterministic run";
+}
+
+function draftStatus(run: WorkflowRunDetail): string {
+  if (isPartialMappingRun(run)) {
+    if (run.project_change_set_status === "validated") return "Successful mappings ready to apply";
+    if (run.project_change_set_status === "applied") return "Successful mappings applied · partial results";
+  }
+  if (run.workflow_run_state === "failed" && run.project_change_set_status === "active") {
+    return "Draft retained · corrections required";
+  }
+  if (run.project_change_set_status === "validated") return "Validated draft ready";
+  if (run.project_change_set_status === "applied") return "Draft applied";
+  if (run.project_change_set_status) {
+    return `Draft ${run.project_change_set_status.replaceAll("_", " ")}`;
+  }
+  return isActiveRun(run) ? "Authoring in progress" : "No applicable draft";
+}
+
+function safeApplyFailure(error: Error): string {
+  if (error instanceof ApiError && error.code === "mapping_branch_unavailable") {
+    return "A System in this draft is no longer one of its Entity's Mapping branches; its sources or Logical Mapping changed. Start a new Mapping run.";
+  }
+  if (error instanceof ApiError && error.status === 409) {
+    return "The Project or draft changed before Apply. Refresh the run and review the latest draft.";
+  }
+  if (error instanceof ApiError && error.status === 403) {
+    return "Apply was not authorized. Confirm your role and owned Tenant Lock.";
+  }
+  return "The validated draft could not be applied. No unverified server detail was displayed.";
+}
+
+function isAmbiguousTransportFailure(error: Error): boolean {
+  if (error instanceof TypeError) return true;
+  return typeof DOMException !== "undefined"
+    && error instanceof DOMException
+    && ["AbortError", "NetworkError", "TimeoutError"].includes(error.name);
+}

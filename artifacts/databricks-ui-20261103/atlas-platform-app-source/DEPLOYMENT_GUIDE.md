@@ -1,0 +1,242 @@
+# Databricks App deployment
+
+This runbook covers the web App: React, FastAPI and its durable worker in one
+supervised process. MCP is a separate Azure App Service. Source manifests/configuration
+are authoritative; this document explains operator steps and failure boundaries.
+Deployment requires explicit approval and a compatible, already-installed database.
+It performs no schema migration, backfill or direct Project-data update.
+
+## Required configuration
+
+Use the checked-in `databricks.yml`, `app.yaml`, Python/Node manifests and lock files.
+The bundle defines development/production targets; the manual-upload builder includes
+the same canonical App manifest. Never modify files inside a checksummed artifact.
+
+1. Ensure Databricks Apps, user authorization and the identity scopes
+   `iam.access-control:read` and `iam.current-user:read` are available and permitted.
+   The authorized workspace group receives App `CAN_USE`.
+2. Install the matching PostgreSQL release and required seeds following
+   [database instructions](../database/README.md). Do not replay schema DDL on an
+   existing database. Verify readiness against this release's code, not historical
+   stage/table counts.
+3. Register each user's Entra identity and required Tenant access. The backend resolves
+   the forwarded Databricks user token through `current_user.me()`; the active SCIM
+   user's `externalId` must be the nonzero Entra object UUID. The configured Entra
+   tenant should match the directory used by existing PostgreSQL identities.
+4. Configure approved network paths to PostgreSQL, registered Databricks SQL, Foundry,
+   and package registries. Do not expose the FastAPI port separately.
+5. Store sensitive values in an app-scoped secret store. Use read-only App secret
+   resources, never literal secrets in source, shell commands, logs or override files.
+
+| App resource | Meaning |
+| --- | --- |
+| `postgres-dsn` | TLS PostgreSQL connection using only `gds_web_runtime`. |
+| `cursor-signing-key` | Approved random cursor signing value, within runtime bounds. |
+| `entra-tenant-id` | Directory UUID used to resolve the human Principal. |
+| `databricks-environment-code` | Existing governed SQL Environment code. |
+| `foundry-openai-base-url` | Resource OpenAI v1 URL accepted by backend configuration. |
+| `foundry-api-key` | Foundry resource API key for the canonical deployment. |
+
+`app.yaml` owns exact environment-to-resource mappings. `databricks.yml` declares
+required non-secret bundle variable names. Configure their values in ignored
+`.databricks/bundle/<target>/variable-overrides.json`; store resource/key names only,
+never their values. Databricks owns its injected host, port and OAuth credentials;
+do not copy them into application or Foundry settings.
+
+For PostgreSQL, prefer `sslmode=verify-full` with the DNS hostname. The App uses its
+pinned CA bundle when the CA source is omitted or `system`. Explicit `sslmode=require`
+is an encrypted development fallback without hostname verification. Plaintext modes
+and a production login other than `gds_web_runtime` are rejected.
+
+## Foundry
+
+The registry `web_app/backend/atlas_platform/config/agent_capabilities.json` owns
+project codes, actual deployment names, execution modes and reasoning choices. Configure
+only combinations verified for the destination resource, then rebuild. There is no
+per-project environment override. Historical Run selections remain immutable.
+
+For OpenAI models, the SDK adapter selects Responses for requests with tools and
+Chat Completions for requests without tools. Claude Opus 5.5 uses the native Messages
+API through the same agent loop. Do not remove reasoning to fit a different transport.
+Backend configuration rejects unsupported project/mode/reasoning combinations.
+
+Canonical App configuration uses secret resources:
+
+   ```yaml
+   - name: GDS_WEB_FOUNDRY_OPENAI_BASE_URL
+     valueFrom: foundry-openai-base-url
+   - name: GDS_WEB_FOUNDRY_API_KEY
+     valueFrom: foundry-api-key
+   ```
+
+Alternatively replace the API-key setting and bundle resource with all three Entra
+client credential settings before rebuilding:
+
+   ```yaml
+   - name: GDS_WEB_FOUNDRY_ENTRA_TENANT_ID
+     valueFrom: foundry-entra-tenant-id
+   - name: GDS_WEB_FOUNDRY_CLIENT_ID
+     valueFrom: foundry-client-id
+   - name: GDS_WEB_FOUNDRY_CLIENT_SECRET
+     valueFrom: foundry-client-secret
+   ```
+
+Use the API key or the three Entra client credential variables, never both.
+Entra uses an explicitly configured application with inference permission and the
+`https://cognitiveservices.azure.com/.default` token audience. Databricks App OAuth
+credentials are not Foundry credentials; implicit host managed-identity discovery is
+not used. Entra accepts `https://<resource>.openai.azure.com/openai/v1/`; API-key
+configuration also accepts the resource `.services.ai.azure.com/openai/v1/` route.
+Project routes under `/api/projects/` are rejected.
+
+To enable Claude Opus 5.5 remotely, deploy `claude-opus-5-5` in the same Foundry
+resource. The canonical `app.yaml` sets `GDS_WEB_FOUNDRY_ANTHROPIC_BASE_URL=auto`,
+deriving `https://<resource>.services.ai.azure.com/anthropic` from the validated
+OpenAI endpoint without another resource binding. Custom deployments can use
+`auto` or supply that explicit endpoint. Omit the setting to exclude Claude. Use the
+deployment name registered in `agent_capabilities.json`; customize that registry
+entry if the deployed name differs. It reuses the configured API key or Entra
+application. Claude's Entra audience is `https://ai.azure.com/.default`; a separate
+authentication adapter prevents reusing an OpenAI-audience token. Without this
+setting Claude is excluded from the remote model choices. No cloud deployment or
+permission change happens at application startup.
+
+Claude accepts `low`, `medium`, `high`, `xhigh`, and `max`; provider default omits
+the setting and currently means `medium`. Adaptive thinking is always on, and
+forced tool choice is unsupported. Verify one-shot and tool-assisted workflows
+against the actual deployment before release; local fake and HTTP fixture tests
+do not establish deployment access or model output quality. See
+[Microsoft's deployment/API guide](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/use-foundry-models-claude)
+and [Anthropic's Opus 5.5 contract](https://platform.claude.com/docs/en/models/opus-5-5/overview).
+
+Project-call timeout, worker lease/heartbeat and SQL limits are independent. Their
+current defaults/bounds are in backend config and settings; do not copy deployment
+specific limits into prompts. Missing/partial credentials fail startup. Disable raw
+project payload tracing.
+
+Optional `GDS_WEB_FOUNDRY_PRICING_JSON` supplies approved token rates by registered
+project code. The runtime schema validates rates and applicability. Unset rates mean
+Unpriced; missing provider usage stays unknown. Each request freezes its applicable
+rate before execution. Estimates exclude other platform/contract charges.
+
+## Build and release
+
+Run the checks in root `AGENTS.md`, including disposable database tests, frontend
+build and packaging. For local UI review use:
+
+```bash
+python3 web_app/local/run.py
+```
+
+It uses a new disposable PostgreSQL container, local identity and fake external
+adapters. Stop with Ctrl-C. Never substitute a deployed database or production
+credentials into local tests.
+
+Build a manual-upload artifact with:
+
+```bash
+python3 deployment/databricks_ui/build_uploads.py
+```
+
+Use `--replace` only to replace that builder's previous output. Upload the expanded
+`artifacts/databricks-ui/atlas-platform-app-source` directory, preserving nesting;
+see [upload mechanics](../deployment/databricks_ui/README.md). The ZIP is transport,
+not a Databricks notebook import. Managed deployment installs dependencies, builds
+React into `web_app/frontend/dist`, then runs canonical `app.yaml`.
+
+For an approved bundle deployment, authenticate the operator and use the intended
+profile/target:
+
+```bash
+databricks auth login --host <workspace-url> --profile <profile>
+databricks bundle validate -t development -p <profile>
+databricks bundle deploy -t development -p <profile>
+databricks bundle run -t development -p <profile> workbench
+databricks apps get <app-name> --profile <profile>
+```
+
+`workbench` is the bundle resource key. Deploy uploads source; Run starts/restarts it.
+Wait for Running. Promote the same verified source and locks using the production
+target/profile only after acceptance. Never record secret references or values in a
+release record.
+
+Before rollout, check active Project agent defaults against the current registry.
+Incompatible defaults need an approved governed Project update, not direct SQL or
+historical Run rewrites. Code/schema compatibility is a separate gate from replaying
+prompt/reference seeds.
+
+Coverage enforcement requires the Logical and Dimensional enforcement columns and
+matching governed Project function signatures from this release. App-only redeployment
+against an older schema fails readiness. Numbered SQL remains fresh-install-only;
+an existing installation needs a separately reviewed schema transition.
+
+The worker checks database readiness before claiming any Run. This includes its
+execution grants and the installed claim/context-lock fixes needed for heartbeats
+during preparation. An incompatible installation stops the supervised app with
+`workflow_database_not_ready` and a safe database category. Uploading app source
+does not update installed SQL; do not replay the fresh-install files on existing data.
+
+After schema compatibility is established, refresh reference seed 04 and publish the
+updated Logical and Dimensional Build/Optimize defaults through the documented seed 05
+replay or the Prompts UI.
+Seed replay preserves custom defaults; explicitly select a new published version
+when the Project uses a custom assignment. Start a new Run to use the new version.
+Set each layer's Enforce coverage threshold switch in Project Settings as required;
+both default off. Verify rejection below target and review a Build of one representative
+Subject Area, then Optimize, before building the remaining areas.
+
+## Acceptance and rollback
+
+Verify in the intended environment using authorized data:
+
+- `/healthz` and `/readyz`; React assets and deep-link reload; same-origin API.
+- App group access, valid mapped identity and bounded unauthorized denials.
+- Tenant roles, owned lock, revision conflict and idempotent retries.
+- Worker claim/heartbeat/completion and safe failure reporting.
+- Authenticated `/api/v1/config/runtime-diagnostics`: its `installed_source` must
+  match `expected_installed_source` in the upload's `artifact-manifest.json`.
+- Representative workflows with actual Foundry deployments, both supported modes,
+  required reasoning and governed Databricks data access.
+- No credentials, raw prompts, rows, tool output or stack traces in logs/telemetry.
+
+Local synthetic checks do not certify live-provider quality or production networking.
+The runtime diagnostic reports the worker attached to the same HTTP process, its
+readiness and last poll, and the last bounded fault category and execution boundary.
+It makes no database calls and returns no configuration values, paths, Run IDs,
+exception text or workflow content. Faults survive later idle polls but reset when
+the process restarts. Source fingerprints are captured from installed Python/JSON
+files at startup; they attest those disk files, not already-loaded bytecode. A matching
+fingerprint establishes package identity, not successful execution. An HTTP-only
+startup reports `not_attached`; it cannot claim an embedded worker is healthy.
+When the Run's usage initialization is missing, the upload also includes
+`inspect_workflow_startup_access.sql`. This catalog-only, read-only probe checks
+direct owner privileges for usage initialization and its binding helper. It does
+not call those functions or establish that nested authorization will succeed.
+
+Rollback redeploys a known-good compatible source revision using validate/deploy/run;
+it never resets PostgreSQL or invokes `bundle destroy`. Recheck active Project default
+compatibility and preserve immutable historical provenance.
+
+| Failure | Check |
+| --- | --- |
+| Build/startup failure | Lock files, approved registry egress, App resource resolution and bounded logs. |
+| Frontend unavailable | Root Node build produced `web_app/frontend/dist/index.html` and assets. |
+| 401 | User authorization/scopes, forwarded token, active SCIM user and Entra `externalId`. |
+| 403 | App `CAN_USE`, registered Principal, Tenant role, ownership and lock. |
+| Readiness 503 | Database network/TLS/runtime role and exact installed release/reference metadata. |
+| Workflow database not ready | Read the safe startup category: `database_schema_unavailable` means incompatible schema, reference metadata or workflow functions; `database_role_invalid` means runtime role/grants; `database_unavailable` means connection/readiness failure. Resolve compatibility before restarting. No Run is claimed during this check. |
+| Foundry failure | Accepted URL, exact registry deployment, one complete authentication method, inference permission, egress and mode/reasoning support. |
+| Latest upload still runs old behavior | Compare authenticated runtime `installed_source` against the artifact manifest's `expected_installed_source`. Rebuild and deploy the complete expanded source folder if they differ. Both Python packages track Python/JSON source changes in their build cache; copying individual files into an older artifact can omit this fix. |
+| Queue stalled | Supervised worker, claims, lock/revision state and bounded workflow events. |
+| Run shows Running but nothing happens | The Run panel says "Waiting for a free worker" while no worker holds it, or "Waiting for the model response since …" during an unanswered model call. The worker executes up to four Runs at once, one per Tenant (`GDS_WEB_WORKFLOW_MAX_CONCURRENT_RUNS`, 1–16); runtime diagnostics report `active_runs`. Refresh the panel: it does not update by itself. |
+| Run executing with no progress | Runtime diagnostics show `state: executing` while the Run shows no new stage. Databricks SQL calls now stop within their own statement budget (retry waits capped at 5 s) on dedicated threads. Enrichment stops reading a Warehouse after one connection failure or a read that used its whole 30-second budget, and logs `metadata_evidence_connection_skipped reason=connection_failed` or `reason=read_timeout`. Check that Warehouse's state, HTTP path, token and App egress. Long model calls are separate: the provider timeout is unchanged. |
+| Database lock or statement limit | Every web transaction ends a lock wait after 60 s, a statement after 10 min and an idle transaction after 5 min. A `database_contention` category means another session held a needed Run or Project row lock that long; find long-running or idle-in-transaction sessions in `pg_stat_activity`. |
+| Recovery limit exhausted | The worker acquired the Run but repeatedly lost its claim or failed execution. Default 120-second leases and five recoveries can reach this failure after about twelve minutes; it is separate from the model timeout. A heartbeat that waits behind the Run's own long write or a brief database outage logs `workflow_heartbeat_delayed` and retries while the lease is live. If a Run exhausts recovery while this App logged no `workflow_` line for it, another process using the same database login claimed it; give each deployment its own login secret. Read the authenticated runtime diagnostic's fault boundary/category and age, or inspect earlier `workflow_execution_failed` / `workflow_claim_lost` logs by Run ID and recovery count. `workflow_poll_failed` identifies errors before dispatch, including `invalid_contract` for incompatible claim data. Categories contain no raw errors. |
+| Workflow Run revision stale | The Project changed after Run creation. Refresh the Project and start a new Run; the frozen revision is never rewritten. |
+| Workflow Run authorization unavailable | Before pickup/recovery, the owner lost write access or its Tenant Lock. Restore access and the owner's Tenant Lock, then start a new Run. A live claim remains owned by its worker. |
+| Workflow usage unavailable | Usage initialization failed before the executor started. Check database release compatibility and runtime access; a guarded failure is recorded when the Run still permits it. |
+
+Platform reference: [Databricks Apps](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/),
+[bundle App deployment](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/bundles/apps-tutorial).
+Check platform prerequisites at deployment time; repository manifests define this
+release's runtime contract.

@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from functools import lru_cache
 from typing import Any, LiteralString
 
 from atlas_mcp.infrastructure.postgres import (
@@ -16,6 +17,8 @@ from psycopg import Error as PsycopgError
 from psycopg.errors import InsufficientPrivilege
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
+
+from atlas_platform.features.workflows.authoring.prompt_inputs import list_prompt_input_contracts
 
 type QueryParameters = tuple[Any, ...]
 
@@ -447,17 +450,37 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
             WHERE table_schema = 'application' AND table_name = 'prompt_template_version'
               AND column_name = 'agent_tool_names' AND udt_name = '_text'
        ) AS workflow_guard_ready,
-       (SELECT count(*) = 31
-          FROM application.workflow_stage)
-       AND (SELECT count(*) = 31
-              FROM application.workflow_stage
-             WHERE is_active)
-       AND (SELECT count(*) = 271
-              FROM application.workflow_stage_variable)
-       AND (SELECT count(*) = 271
-              FROM application.workflow_stage_variable
-             WHERE is_active) AS application_reference_ready
+       (SELECT count(*) = 31 AND bool_and(is_active)
+               AND count(*) FILTER (WHERE workflow_stage_is_agentic) = 19
+          FROM application.workflow_stage) AS application_reference_ready,
+       (SELECT jsonb_agg(jsonb_build_array(
+                   stage.project_workflow, stage.workflow_execution_mode, stage.workflow_stage_code,
+                   (SELECT coalesce(jsonb_object_agg(variable.workflow_stage_variable_name,
+                                                     variable.workflow_stage_variable_data_type),
+                                    '{}'::jsonb)
+                      FROM application.workflow_stage_variable AS variable
+                     WHERE variable.workflow_stage_id = stage.workflow_stage_id
+                       AND variable.is_active
+                       AND variable.workflow_stage_variable_resolver_key =
+                           'workflow.' || stage.project_workflow || '.common.'
+                           || stage.workflow_stage_code || '.inputs.'
+                           || variable.workflow_stage_variable_name)))
+          FROM application.workflow_stage AS stage
+         WHERE stage.is_active AND stage.workflow_stage_is_agentic) AS active_stage_variables
 """
+
+
+@lru_cache(maxsize=64)
+def _required_stage_variables(
+    workflow: str, mode: str | None, stage_code: str
+) -> frozenset[tuple[str, str]]:
+    return frozenset(
+        (contract.name, contract.data_type)
+        for contract in list_prompt_input_contracts(
+            project_workflow=workflow, workflow_execution_mode=mode, stage_code=stage_code
+        )
+    )
+
 
 # No web transaction may wait forever. These limits sit above normal work, including a
 # large result commit that briefly blocks a heartbeat, so they only end stuck waits: a
@@ -528,6 +551,10 @@ class WebPostgresDatabase:
                 return ReadinessRecord(ready=False, code="database_schema_unavailable")
             if not row["workflow_guard_ready"] or not row["application_reference_ready"]:
                 return ReadinessRecord(ready=False, code="database_schema_unavailable")
+            for workflow, mode, stage, variables in row["active_stage_variables"]:
+                required = _required_stage_variables(workflow, mode, stage)
+                if not required or not required.issubset(variables.items()):
+                    return ReadinessRecord(ready=False, code="database_schema_unavailable")
             if not row["role_ready"] or not row["privileges_ready"]:
                 return ReadinessRecord(ready=False, code="database_role_invalid")
             return ReadinessRecord(ready=True, code="ready")

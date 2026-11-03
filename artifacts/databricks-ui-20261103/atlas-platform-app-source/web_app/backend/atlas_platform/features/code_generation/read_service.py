@@ -1,0 +1,753 @@
+"""Read-only stored SQL Code Generation database service."""
+
+from contextlib import AbstractAsyncContextManager
+from hashlib import sha256
+from typing import LiteralString, Protocol
+
+from atlas_mcp.application.authorization import AuthorizationService
+from atlas_mcp.application.cursor import CursorCodec
+from atlas_mcp.domain.authorization import RequestPrincipal, ToolPolicy
+from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_mcp.infrastructure.postgres import ReadIsolation, ReadTransaction
+
+from atlas_platform.features.projects import ProjectNotFoundError
+from atlas_platform.features.projects.command_contracts import ProjectRevisionConflictError
+
+from .contracts import (
+    MAX_BULK_SQL_BYTES,
+    MAX_EXPORT_ARTIFACTS,
+    MAX_SELECTED_ARTIFACTS,
+    CodeGenerationTargetFilters,
+    CodeGenerationTargetPage,
+    CodeGenerationTargetSummary,
+    ExportSqlArtifactsRequest,
+    GeneratedSqlArtifactDetail,
+    GeneratedSqlArtifactNotFoundError,
+    SqlArtifactBundleLimitExceededError,
+    SqlArtifactDownload,
+    SqlArtifactExportEmptyError,
+)
+
+_PROJECT_HEADER_SQL: LiteralString = """
+SELECT target_project.project_revision
+  FROM project.project AS target_project
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND target_project.is_active
+"""
+
+_CODE_GENERATION_TARGETS_SQL: LiteralString = """
+WITH target_project AS (
+    SELECT target_project.project_id,
+           target_project.project_revision
+      FROM project.project AS target_project
+     WHERE target_project.tenant_id = %s
+       AND target_project.project_id = %s
+       AND target_project.is_active
+), requested_layer AS (
+    SELECT layer.modeled_entity_type
+      FROM (VALUES
+               ('logical_entity'::VARCHAR(30)),
+               ('dimensional_entity'::VARCHAR(30))
+           ) AS layer(modeled_entity_type)
+     WHERE %s::VARCHAR IS NULL
+        OR layer.modeled_entity_type = %s
+), current_context AS MATERIALIZED (
+    SELECT context.*
+      FROM target_project
+      CROSS JOIN requested_layer AS layer
+      CROSS JOIN LATERAL workflow.list_code_generation_target_context(
+          target_project.project_id,
+          layer.modeled_entity_type
+      ) AS context
+)
+SELECT jsonb_build_object(
+           'entity_id', context.modeled_entity_id,
+           'entity_type', context.modeled_entity_type,
+           'entity_schema_name', context.modeled_entity_schema_name,
+           'entity_name', context.modeled_entity_name
+       ) AS target,
+       context.modeled_entity_type AS entity_type,
+       mapping_support.mapping_supports,
+       mapping_support.mapping_support_count,
+       mapping_support.mapping_support_count > 200 AS mapping_supports_truncated,
+       source_system.source_systems,
+       context.source_system_count,
+       artifact.artifacts,
+       artifact.artifact_count,
+       EXISTS (SELECT 1 FROM workflow.generated_code AS locked_code
+          LEFT JOIN workflow.generated_code_source_system AS locked_source
+            ON locked_source.generated_code_id = locked_code.generated_code_id
+           AND locked_source.generated_code_source_system_status = 'active'
+         WHERE locked_code.project_id = context.project_id
+           AND locked_code.modeled_entity_type = context.modeled_entity_type
+           AND coalesce(locked_code.logical_entity_id, locked_code.dimensional_entity_id) =
+               context.modeled_entity_id
+           AND locked_code.generated_code_status = 'active'
+           AND (locked_code.generated_code_is_locked
+                OR locked_source.generated_code_source_system_is_locked)) AS is_locked
+  FROM target_project
+  JOIN current_context AS context
+    ON context.project_id = target_project.project_id
+  CROSS JOIN LATERAL (
+      SELECT coalesce(
+                 jsonb_agg(support.document ORDER BY support.position)
+                     FILTER (WHERE support.position <= 200),
+                 '[]'::JSONB
+             ) AS mapping_supports,
+             count(*)::INTEGER AS mapping_support_count
+        FROM (
+            SELECT mapping_entry.position,
+                   jsonb_build_object(
+                       'mapping_object_id',
+                           (mapping_entry.document ->> 'mapping_object_id')::BIGINT,
+                       'source', jsonb_build_object(
+                           'entity_type', context.modeled_entity_type,
+                           'entity_id',
+                               (mapping_entry.document -> 'entity' ->>
+                                'entity_id')::BIGINT,
+                           'entity_schema_name',
+                               mapping_entry.document -> 'entity' ->> 'entity_schema_name',
+                           'entity_name',
+                               mapping_entry.document -> 'entity' ->> 'entity_name'
+                       ),
+                       'source_system', jsonb_build_object(
+                           'system_id', source.system_id,
+                           'system_code', source.system_code,
+                           'system_name', source.system_name
+                       ),
+                       'dependency_order',
+                           (mapping_entry.document ->>
+                            'object_dependency_order')::INTEGER,
+                       'object_transformation_missing',
+                           mapping_entry.document ->> 'transformation' IS NULL,
+                       'unmapped_attribute_count', (
+                           SELECT count(*)::INTEGER
+                             FROM jsonb_array_elements(
+                                 context.source_context -> 'attribute_mappings'
+                             ) AS attribute_entry(document)
+                            WHERE attribute_entry.document ->> 'mapping_object_id' =
+                                  mapping_entry.document ->> 'mapping_object_id'
+                              AND attribute_entry.document ->> 'transformation' IS NULL
+                       ),
+                       'unmapped_attribute_names', (
+                           SELECT coalesce(
+                               jsonb_agg(missing.name ORDER BY missing.position), '[]'::JSONB
+                           )
+                             FROM (
+                                 SELECT attribute_entry.document ->>
+                                            'target_attribute_name' AS name,
+                                        attribute_entry.position
+                                   FROM jsonb_array_elements(
+                                       context.source_context -> 'attribute_mappings'
+                                   ) WITH ORDINALITY AS attribute_entry(document, position)
+                                  WHERE attribute_entry.document ->> 'mapping_object_id' =
+                                        mapping_entry.document ->> 'mapping_object_id'
+                                    AND attribute_entry.document ->> 'transformation' IS NULL
+                                  ORDER BY attribute_entry.position
+                                  LIMIT 200
+                             ) AS missing
+                       )
+                   ) AS document
+              FROM jsonb_array_elements(
+                       context.source_context -> 'object_mappings'
+                   ) WITH ORDINALITY AS mapping_entry(document, position)
+              JOIN LATERAL (
+                  SELECT (entry.document ->> 'source_system_id')::BIGINT AS system_id,
+                         entry.document ->> 'system_code' AS system_code,
+                         entry.document ->> 'system_name' AS system_name
+                    FROM jsonb_array_elements(
+                             context.source_context -> 'source_systems'
+                         ) AS entry(document)
+                   WHERE (entry.document ->> 'source_system_id')::BIGINT =
+                         (mapping_entry.document ->> 'source_system_id')::BIGINT
+                   LIMIT 1
+              ) AS source ON TRUE
+        ) AS support
+  ) AS mapping_support
+  CROSS JOIN LATERAL (
+      SELECT coalesce(
+                 jsonb_agg(
+                     jsonb_build_object(
+                         'system_id',
+                             (entry.document ->> 'source_system_id')::BIGINT,
+                         'system_code', entry.document ->> 'system_code',
+                         'system_name', entry.document ->> 'system_name'
+                     ) ORDER BY entry.position
+                 ),
+                 '[]'::JSONB
+             ) AS source_systems
+        FROM jsonb_array_elements(
+                 context.source_context -> 'source_systems'
+             ) WITH ORDINALITY AS entry(document, position)
+  ) AS source_system
+  CROSS JOIN LATERAL (
+      SELECT coalesce(
+                 jsonb_agg(
+                     jsonb_build_object(
+                         'generated_sql_artifact_id', generated.generated_code_id,
+                         'artifact_name', generated.artifact_name,
+                         'workflow_run_id', generated.workflow_run_id,
+                         'generated_at', generated.updated_time,
+                         'generated_code_status', generated.generated_code_status,
+                         'generated_code_is_locked', generated.generated_code_is_locked,
+                         'source_system_codes', association.source_system_codes,
+                         'artifact_is_current',
+                             generated.generated_code_status = 'active'
+                             AND generated.code_input_digest = context.code_input_digest
+                     ) ORDER BY lower(btrim(generated.artifact_name)),
+                                generated.generated_code_id
+                 ),
+                 '[]'::JSONB
+             ) AS artifacts,
+             count(*)::INTEGER AS artifact_count
+        FROM workflow.generated_code AS generated
+       CROSS JOIN LATERAL (
+           SELECT coalesce(
+                      jsonb_agg(
+                          system.system_code
+                          ORDER BY lower(btrim(system.system_code)), system.system_id
+                      ) FILTER (
+                          WHERE assignment.generated_code_source_system_status = 'active'
+                      ),
+                      '[]'::JSONB
+                  ) AS source_system_codes
+             FROM workflow.generated_code_source_system AS assignment
+             JOIN core.system AS system
+               ON system.system_id = assignment.source_system_id
+            WHERE assignment.generated_code_id = generated.generated_code_id
+       ) AS association
+       WHERE generated.project_id = context.project_id
+           AND generated.modeled_entity_type = context.modeled_entity_type
+           AND coalesce(generated.logical_entity_id, generated.dimensional_entity_id) =
+               context.modeled_entity_id
+         AND generated.artifact_type = 'sql_file'
+         AND generated.code_storage_type = 'table'
+  ) AS artifact
+ WHERE (%s::BIGINT IS NULL
+        OR (context.source_context -> 'target' ->> 'system_id')::BIGINT = %s)
+   AND (
+       %s::VARCHAR IS NULL
+       OR lower(btrim(context.source_context -> 'target' ->> 'system_code')) = %s
+   )
+   AND (
+       %s::BIGINT IS NULL
+       OR EXISTS (
+           SELECT 1
+             FROM jsonb_array_elements(
+                      context.source_context -> 'source_systems'
+                  ) AS entry(document)
+            WHERE (entry.document ->> 'source_system_id')::BIGINT = %s
+       )
+   )
+   AND (
+       %s::VARCHAR IS NULL
+       OR EXISTS (
+           SELECT 1
+             FROM jsonb_array_elements(
+                      context.source_context -> 'source_systems'
+                  ) AS entry(document)
+            WHERE lower(btrim(entry.document ->> 'system_code')) = %s
+       )
+   )
+ ORDER BY lower(btrim(context.modeled_entity_schema_name)),
+          lower(btrim(context.modeled_entity_name)),
+          context.modeled_entity_id,
+          context.modeled_entity_type
+ LIMIT %s OFFSET %s
+"""
+
+_GENERATED_SQL_ARTIFACT_DETAIL_SQL: LiteralString = """
+SELECT artifact.generated_code_id AS generated_sql_artifact_id,
+       artifact.artifact_name,
+       target_project.project_id,
+       jsonb_build_object(
+           'entity_id', entity.modeled_entity_id,
+           'entity_type', entity.modeled_entity_type,
+           'entity_schema_name', entity.modeled_entity_schema_name,
+           'entity_name', entity.modeled_entity_name
+       ) AS target,
+       artifact.modeled_entity_type AS entity_type,
+       source_system.source_systems,
+       source_system.source_system_count,
+       mapping_support.mapping_supports,
+       mapping_support.mapping_support_count,
+       mapping_support.mapping_support_count > 200 AS mapping_supports_truncated,
+       coalesce(
+           artifact.generated_code_status = 'active'
+           AND current_context.code_input_digest = artifact.code_input_digest,
+           FALSE
+       ) AS artifact_is_current,
+       artifact.generated_code_status,
+       artifact.generated_code_is_locked,
+       artifact.workflow_run_id,
+       CASE
+           WHEN generator.principal_id IS NULL THEN NULL
+           ELSE jsonb_build_object(
+               'generator_code', generating_run.agent_sdk_code,
+               'generator_version', NULL,
+               'generated_by_display_name', generator.principal_display_name
+           )
+       END AS generator,
+       artifact.updated_time AS generated_at,
+       artifact.generated_code_content AS generated_sql,
+       octet_length(artifact.generated_code_content)::INTEGER
+           AS generated_sql_byte_count
+  FROM workflow.generated_code AS artifact
+  JOIN project.project AS target_project
+    ON target_project.project_id = artifact.project_id
+  JOIN workflow.modeled_entity AS entity
+    ON entity.project_id = artifact.project_id
+   AND entity.modeled_entity_type = artifact.modeled_entity_type
+   AND entity.modeled_entity_id = coalesce(artifact.logical_entity_id,
+       artifact.dimensional_entity_id)
+  LEFT JOIN LATERAL workflow.list_code_generation_target_context(
+      artifact.project_id,
+      artifact.modeled_entity_type
+  ) AS current_context
+    ON current_context.modeled_entity_id = entity.modeled_entity_id
+  LEFT JOIN application.workflow_run AS generating_run
+    ON generating_run.workflow_run_id = artifact.workflow_run_id
+   AND generating_run.project_id = artifact.project_id
+   AND generating_run.project_workflow = 'code_generation'
+  LEFT JOIN security.principal AS generator
+    ON generator.principal_id = generating_run.actor_principal_id
+  CROSS JOIN LATERAL (
+      SELECT coalesce(
+                 jsonb_agg(support.document ORDER BY support.position)
+                     FILTER (WHERE support.position <= 200),
+                 '[]'::JSONB
+             ) AS mapping_supports,
+             count(*)::INTEGER AS mapping_support_count
+        FROM (
+            SELECT mapping_entry.position,
+                   jsonb_build_object(
+                       'mapping_object_id',
+                           (mapping_entry.document ->> 'mapping_object_id')::BIGINT,
+                       'source', jsonb_build_object(
+                           'entity_type', artifact.modeled_entity_type,
+                           'entity_id',
+                               (mapping_entry.document -> 'entity' ->>
+                                'entity_id')::BIGINT,
+                           'entity_schema_name',
+                               mapping_entry.document -> 'entity' ->> 'entity_schema_name',
+                           'entity_name',
+                               mapping_entry.document -> 'entity' ->> 'entity_name'
+                       ),
+                       'source_system', jsonb_build_object(
+                           'system_id', source.system_id,
+                           'system_code', source.system_code,
+                           'system_name', source.system_name
+                       ),
+                       'dependency_order',
+                           (mapping_entry.document ->>
+                            'object_dependency_order')::INTEGER,
+                       'object_transformation_missing',
+                           mapping_entry.document ->> 'transformation' IS NULL,
+                       'unmapped_attribute_count', (
+                           SELECT count(*)::INTEGER
+                             FROM jsonb_array_elements(
+                                 current_context.source_context -> 'attribute_mappings'
+                             ) AS attribute_entry(document)
+                            WHERE attribute_entry.document ->> 'mapping_object_id' =
+                                  mapping_entry.document ->> 'mapping_object_id'
+                              AND attribute_entry.document ->> 'transformation' IS NULL
+                       ),
+                       'unmapped_attribute_names', (
+                           SELECT coalesce(
+                               jsonb_agg(missing.name ORDER BY missing.position), '[]'::JSONB
+                           )
+                             FROM (
+                                 SELECT attribute_entry.document ->>
+                                            'target_attribute_name' AS name,
+                                        attribute_entry.position
+                                   FROM jsonb_array_elements(
+                                       current_context.source_context -> 'attribute_mappings'
+                                   ) WITH ORDINALITY AS attribute_entry(document, position)
+                                  WHERE attribute_entry.document ->> 'mapping_object_id' =
+                                        mapping_entry.document ->> 'mapping_object_id'
+                                    AND attribute_entry.document ->> 'transformation' IS NULL
+                                  ORDER BY attribute_entry.position
+                                  LIMIT 200
+                             ) AS missing
+                       )
+                   ) AS document
+              FROM jsonb_array_elements(
+                       coalesce(
+                           current_context.source_context -> 'object_mappings',
+                           '[]'::JSONB
+                       )
+                   ) WITH ORDINALITY AS mapping_entry(document, position)
+              JOIN LATERAL (
+                  SELECT (entry.document ->> 'source_system_id')::BIGINT AS system_id,
+                         entry.document ->> 'system_code' AS system_code,
+                         entry.document ->> 'system_name' AS system_name
+                    FROM jsonb_array_elements(
+                             current_context.source_context -> 'source_systems'
+                         ) AS entry(document)
+                   WHERE (entry.document ->> 'source_system_id')::BIGINT =
+                         (mapping_entry.document ->> 'source_system_id')::BIGINT
+                   LIMIT 1
+              ) AS source ON TRUE
+        ) AS support
+  ) AS mapping_support
+  CROSS JOIN LATERAL (
+      SELECT coalesce(
+                 jsonb_agg(
+                     jsonb_build_object(
+                         'system_id', system.system_id,
+                         'system_code', system.system_code,
+                         'system_name', system.system_name
+                     ) ORDER BY lower(btrim(system.system_code)), system.system_id
+                 ) FILTER (
+                     WHERE assignment.generated_code_source_system_status = 'active'
+                 ),
+                 '[]'::JSONB
+             ) AS source_systems,
+             count(*) FILTER (
+                 WHERE assignment.generated_code_source_system_status = 'active'
+             )::INTEGER AS source_system_count
+        FROM workflow.generated_code_source_system AS assignment
+        JOIN core.system AS system
+          ON system.system_id = assignment.source_system_id
+       WHERE assignment.generated_code_id = artifact.generated_code_id
+  ) AS source_system
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND artifact.generated_code_id = %s
+   AND artifact.artifact_type = 'sql_file'
+   AND artifact.code_storage_type = 'table'
+"""
+
+_GENERATED_SQL_DOWNLOAD_BOUNDS_SQL: LiteralString = """
+SELECT count(*)::INTEGER AS artifact_count,
+       coalesce(sum(octet_length(artifact.generated_code_content)), 0)::BIGINT
+           AS total_sql_bytes
+  FROM workflow.generated_code AS artifact
+  JOIN project.project AS target_project
+    ON target_project.project_id = artifact.project_id
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND artifact.generated_code_id = ANY(%s::BIGINT[])
+   AND artifact.artifact_type = 'sql_file'
+   AND artifact.code_storage_type = 'table'
+"""
+
+_GENERATED_SQL_DOWNLOAD_SQL: LiteralString = """
+SELECT artifact.generated_code_id AS generated_sql_artifact_id,
+       artifact.artifact_name,
+       jsonb_build_object(
+           'entity_id', entity.modeled_entity_id,
+           'entity_type', entity.modeled_entity_type,
+           'entity_schema_name', entity.modeled_entity_schema_name,
+           'entity_name', entity.modeled_entity_name
+       ) AS target,
+       artifact.modeled_entity_type AS entity_type,
+       artifact.generated_code_content AS generated_sql,
+       octet_length(artifact.generated_code_content)::INTEGER
+           AS generated_sql_byte_count
+  FROM workflow.generated_code AS artifact
+  JOIN project.project AS target_project
+    ON target_project.project_id = artifact.project_id
+  JOIN workflow.modeled_entity AS entity
+    ON entity.project_id = artifact.project_id
+   AND entity.modeled_entity_type = artifact.modeled_entity_type
+   AND entity.modeled_entity_id = coalesce(artifact.logical_entity_id,
+       artifact.dimensional_entity_id)
+ WHERE target_project.tenant_id = %s
+   AND target_project.project_id = %s
+   AND artifact.generated_code_id = ANY(%s::BIGINT[])
+   AND artifact.artifact_type = 'sql_file'
+   AND artifact.code_storage_type = 'table'
+ ORDER BY array_position(%s::BIGINT[], artifact.generated_code_id)
+"""
+
+
+_ACTIVE_SQL_EXPORT_FROM: LiteralString = """
+  FROM project.project AS owned_project
+  JOIN workflow.generated_code AS artifact ON artifact.project_id = owned_project.project_id
+  JOIN workflow.modeled_entity AS entity
+    ON entity.project_id = artifact.project_id
+   AND entity.modeled_entity_type = artifact.modeled_entity_type
+   AND entity.modeled_entity_id = coalesce(
+       artifact.logical_entity_id, artifact.dimensional_entity_id)
+  LEFT JOIN LATERAL workflow.list_code_generation_target_context(
+      owned_project.project_id, %s::VARCHAR, NULL
+  ) AS context ON context.modeled_entity_id = entity.modeled_entity_id
+             AND context.modeled_entity_type = entity.modeled_entity_type
+ CROSS JOIN LATERAL (
+     SELECT coalesce(array_agg(system.system_code ORDER BY lower(btrim(system.system_code)),
+             system.system_id), ARRAY[]::VARCHAR[]) AS source_system_codes
+       FROM workflow.generated_code_source_system AS assignment
+       JOIN core.system AS system ON system.system_id = assignment.source_system_id
+      WHERE assignment.generated_code_id = artifact.generated_code_id
+        AND assignment.generated_code_source_system_status = 'active'
+ ) AS source
+ WHERE owned_project.tenant_id = %s AND owned_project.project_id = %s
+   AND owned_project.is_active AND artifact.modeled_entity_type = %s
+   AND artifact.generated_code_status = 'active'
+   AND artifact.artifact_type = 'sql_file' AND artifact.code_storage_type = 'table'
+"""
+_ACTIVE_SQL_EXPORT_BOUNDS_SQL: LiteralString = (
+    "SELECT count(*)::INTEGER AS artifact_count, "
+    "coalesce(sum(octet_length(artifact.generated_code_content) "
+    "+ octet_length(artifact.artifact_name) + octet_length(entity.modeled_entity_schema_name) "
+    "+ octet_length(entity.modeled_entity_name) "
+    "+ octet_length(source.source_system_codes::TEXT) + 512), 0)::BIGINT AS total_export_bytes"
+    + _ACTIVE_SQL_EXPORT_FROM
+)
+_ACTIVE_SQL_EXPORT_SQL: LiteralString = (
+    """
+SELECT artifact.generated_code_id AS generated_sql_artifact_id,
+       artifact.artifact_name,
+       jsonb_build_object(
+           'entity_id', entity.modeled_entity_id,
+           'entity_type', entity.modeled_entity_type,
+           'entity_schema_name', entity.modeled_entity_schema_name,
+           'entity_name', entity.modeled_entity_name
+       ) AS target,
+       artifact.modeled_entity_type AS entity_type,
+       artifact.generated_code_content AS generated_sql,
+       octet_length(artifact.generated_code_content)::INTEGER AS generated_sql_byte_count,
+       coalesce(artifact.code_input_digest = context.code_input_digest, FALSE)
+           AS artifact_is_current,
+       source.source_system_codes
+"""
+    + _ACTIVE_SQL_EXPORT_FROM
+    + " ORDER BY lower(btrim(entity.modeled_entity_schema_name)), "
+    "lower(btrim(entity.modeled_entity_name)), lower(btrim(artifact.artifact_name)), "
+    "artifact.generated_code_id LIMIT %s"
+)
+
+
+class CodeGenerationService(Protocol):
+    async def read_all_artifacts_for_download(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        project_id: int,
+        command: ExportSqlArtifactsRequest,
+    ) -> tuple[SqlArtifactDownload, ...]: ...
+
+    async def list_targets(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        project_id: int,
+        filters: CodeGenerationTargetFilters,
+        page_size: int,
+        cursor: str | None,
+    ) -> CodeGenerationTargetPage: ...
+
+    async def read_artifact(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        project_id: int,
+        generated_sql_artifact_id: int,
+    ) -> GeneratedSqlArtifactDetail: ...
+
+    async def read_artifacts_for_download(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        project_id: int,
+        generated_sql_artifact_ids: tuple[int, ...],
+    ) -> tuple[SqlArtifactDownload, ...]: ...
+
+
+class CodeGenerationReadDatabase(Protocol):
+    def read_transaction(
+        self,
+        *,
+        isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
+    ) -> AbstractAsyncContextManager[ReadTransaction]: ...
+
+
+class DatabaseCodeGenerationService:
+    def __init__(
+        self,
+        *,
+        database: CodeGenerationReadDatabase,
+        authorizer: AuthorizationService,
+        cursor_signing_key: bytes,
+    ) -> None:
+        self._database = database
+        self._authorizer = authorizer
+        self._cursors = CursorCodec(cursor_signing_key)
+
+    async def read_all_artifacts_for_download(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        project_id: int,
+        command: ExportSqlArtifactsRequest,
+    ) -> tuple[SqlArtifactDownload, ...]:
+        async with self._database.read_transaction(
+            isolation=ReadIsolation.REPEATABLE_READ
+        ) as transaction:
+            await self._authorizer.authorize_tenant(
+                transaction,
+                principal,
+                tenant_id=tenant_id,
+                policy=ToolPolicy.TENANT_READ,
+                project_id=project_id,
+            )
+            header = await transaction.fetch_one(_PROJECT_HEADER_SQL, (tenant_id, project_id))
+            if header is None:
+                raise ProjectNotFoundError()
+            if header["project_revision"] != command.expected_project_revision:
+                raise ProjectRevisionConflictError()
+            parameters = (command.entity_type, tenant_id, project_id, command.entity_type)
+            bounds = await transaction.fetch_one(_ACTIVE_SQL_EXPORT_BOUNDS_SQL, parameters)
+            if bounds is None or bounds["artifact_count"] == 0:
+                raise SqlArtifactExportEmptyError()
+            if (
+                bounds["artifact_count"] > MAX_EXPORT_ARTIFACTS
+                or bounds["total_export_bytes"] > MAX_BULK_SQL_BYTES
+            ):
+                raise SqlArtifactBundleLimitExceededError()
+            rows = await transaction.fetch_all(
+                _ACTIVE_SQL_EXPORT_SQL, (*parameters, MAX_EXPORT_ARTIFACTS + 1)
+            )
+        if len(rows) != bounds["artifact_count"]:
+            raise SqlArtifactBundleLimitExceededError()
+        return tuple(SqlArtifactDownload.model_validate(row, strict=False) for row in rows)
+
+    async def list_targets(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        project_id: int,
+        filters: CodeGenerationTargetFilters,
+        page_size: int,
+        cursor: str | None,
+    ) -> CodeGenerationTargetPage:
+        filter_digest = sha256(filters.model_dump_json().encode()).hexdigest()
+        collection = (
+            f"web_code_generation_targets:{tenant_id}:{project_id}:{page_size}:{filter_digest}"
+        )
+        offset = self._cursors.decode(cursor, collection=collection)
+        async with self._database.read_transaction(
+            isolation=ReadIsolation.REPEATABLE_READ
+        ) as transaction:
+            await self._authorizer.authorize_tenant(
+                transaction,
+                principal,
+                tenant_id=tenant_id,
+                policy=ToolPolicy.TENANT_READ,
+                project_id=project_id,
+            )
+            header = await transaction.fetch_one(_PROJECT_HEADER_SQL, (tenant_id, project_id))
+            if header is None:
+                raise ProjectNotFoundError()
+            rows = await transaction.fetch_all(
+                _CODE_GENERATION_TARGETS_SQL,
+                (
+                    tenant_id,
+                    project_id,
+                    filters.entity_type,
+                    filters.entity_type,
+                    filters.system_id,
+                    filters.system_id,
+                    filters.system_code,
+                    filters.system_code,
+                    filters.source_system_id,
+                    filters.source_system_id,
+                    filters.source_system_code,
+                    filters.source_system_code,
+                    page_size + 1,
+                    offset,
+                ),
+            )
+
+        next_cursor = None
+        if len(rows) > page_size:
+            next_cursor = self._cursors.encode(
+                collection=collection,
+                offset=offset + page_size,
+            )
+        return CodeGenerationTargetPage(
+            project_id=project_id,
+            project_revision=header["project_revision"],
+            items=tuple(
+                CodeGenerationTargetSummary.model_validate(row, strict=False)
+                for row in rows[:page_size]
+            ),
+            next_cursor=next_cursor,
+        )
+
+    async def read_artifact(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        project_id: int,
+        generated_sql_artifact_id: int,
+    ) -> GeneratedSqlArtifactDetail:
+        async with self._database.read_transaction(
+            isolation=ReadIsolation.REPEATABLE_READ
+        ) as transaction:
+            await self._authorizer.authorize_tenant(
+                transaction,
+                principal,
+                tenant_id=tenant_id,
+                policy=ToolPolicy.TENANT_READ,
+                project_id=project_id,
+            )
+            row = await transaction.fetch_one(
+                _GENERATED_SQL_ARTIFACT_DETAIL_SQL,
+                (tenant_id, project_id, generated_sql_artifact_id),
+            )
+        if row is None:
+            raise GeneratedSqlArtifactNotFoundError()
+        return GeneratedSqlArtifactDetail.model_validate(row, strict=False)
+
+    async def read_artifacts_for_download(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        project_id: int,
+        generated_sql_artifact_ids: tuple[int, ...],
+    ) -> tuple[SqlArtifactDownload, ...]:
+        if (
+            not 1 <= len(generated_sql_artifact_ids) <= MAX_SELECTED_ARTIFACTS
+            or any(identifier <= 0 for identifier in generated_sql_artifact_ids)
+            or len(set(generated_sql_artifact_ids)) != len(generated_sql_artifact_ids)
+        ):
+            raise InvalidRequestError(
+                "Generated SQL artifact IDs must be unique positive integers."
+            )
+        selected_ids = list(generated_sql_artifact_ids)
+        async with self._database.read_transaction(
+            isolation=ReadIsolation.REPEATABLE_READ
+        ) as transaction:
+            await self._authorizer.authorize_tenant(
+                transaction,
+                principal,
+                tenant_id=tenant_id,
+                policy=ToolPolicy.TENANT_READ,
+                project_id=project_id,
+            )
+            bounds = await transaction.fetch_one(
+                _GENERATED_SQL_DOWNLOAD_BOUNDS_SQL,
+                (tenant_id, project_id, selected_ids),
+            )
+            if bounds is None or bounds["artifact_count"] != len(selected_ids):
+                raise GeneratedSqlArtifactNotFoundError()
+            if bounds["total_sql_bytes"] > MAX_BULK_SQL_BYTES:
+                raise SqlArtifactBundleLimitExceededError()
+            rows = await transaction.fetch_all(
+                _GENERATED_SQL_DOWNLOAD_SQL,
+                (tenant_id, project_id, selected_ids, selected_ids),
+            )
+        if tuple(row["generated_sql_artifact_id"] for row in rows) != (generated_sql_artifact_ids):
+            raise GeneratedSqlArtifactNotFoundError()
+        return tuple(SqlArtifactDownload.model_validate(row, strict=False) for row in rows)
