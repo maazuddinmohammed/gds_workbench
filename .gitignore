@@ -24,3 +24,5 @@ web_app/frontend/dist/
 
 # Local planning notes and issues; never published.
 .scratch/
+
+/grdm_sample/
