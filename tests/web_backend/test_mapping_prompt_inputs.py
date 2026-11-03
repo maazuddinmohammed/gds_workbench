@@ -9,14 +9,22 @@ from atlas_mcp.domain.errors import InvalidRequestError
 from atlas_platform.features.mapping.execution_context import (
     build_mapping_execution_context,
 )
+from atlas_platform.features.workflows.authoring.context import (
+    AgentContextToolRequestError,
+)
 from atlas_platform.features.workflows.authoring.downstream_inputs import (
+    build_downstream_readers,
+    compact_mapping_basis,
     downstream_input_contracts,
 )
 from atlas_platform.features.workflows.authoring.prompt_inputs import (
     get_prompt_input_contract,
     project_prompt_input_values,
 )
-from atlas_platform.prompt_rendering import PromptVariableDefinition
+from atlas_platform.prompt_rendering import (
+    PromptComponentTemplates,
+    PromptVariableDefinition,
+)
 from jsonschema import Draft202012Validator
 
 from tests.web_backend.mapping_fixtures import mapping_preparation
@@ -82,3 +90,145 @@ def test_mapping_inputs_preserve_actual_pair_and_evidence(
             context=context,
             resolver_values={prefix + next(iter(inputs)): "wrong"},
         )
+
+
+def test_mapping_basis_pages_wide_sources_and_retains_ambiguous_late_candidates() -> (
+    None
+):
+    preparation = mapping_preparation(execution_mode="one_shot", existing=True)
+    context = build_mapping_execution_context(
+        preparation=preparation, execution_mode="one_shot"
+    ).embedded_context
+    assert isinstance(context, dict)
+    values = cast(dict[str, Any], context["values"])
+    assert "mapping_basis" not in values
+    physical = values["source_evidence"][0]
+    candidate = deepcopy(physical)
+    candidate.update(
+        role="candidate", rationale="Separate connection with the same table name."
+    )
+    candidate["object"]["connection_code"] = "alternate"
+    values["source_evidence"].insert(0, candidate)
+    column = physical["object"]["attributes"][0]
+    candidate["object"]["attributes"].extend(
+        {**column, "attribute_name": f"fallback_{index}"} for index in range(30)
+    )
+    physical["object"]["attributes"].extend(
+        {**column, "attribute_name": f"active_{index}", "is_natural_key": index == 65}
+        for index in range(66)
+    )
+    physical["object"]["attributes"].append(
+        {**column, "attribute_name": "retired", "is_active": False}
+    )
+    values["mapping_support_records"].append(
+        {
+            "evidence_type": "context_record",
+            "record": {"rule": "Use the alternate connection."},
+        }
+    )
+
+    cards = compact_mapping_basis(values)
+    target, field = cards[:2]
+    assert (
+        target["record"]["saved"]
+        == values["existing_mapping"][0]["transformation_document"]
+    )
+    assert (
+        field["record"]["saved"]
+        == values["existing_mapping"][0]["attribute_mappings"][0][
+            "transformation_document"
+        ]
+    )
+    lineage = values["mapping_support_records"][0]["record"]
+    assert field["record"]["sources"] == lineage["sources"]
+    assert field["record"]["action"] == "extend"
+    source, fallback = [card["record"] for card in cards if card["kind"] == "source"]
+    assert source["object_name"] == fallback["object_name"]
+    assert source["connection_code"] != fallback["connection_code"]
+    assert source["tenant_catalog"] == physical["object"]["tenant_catalog"]
+    assert fallback["rationale"] == candidate["rationale"]
+    directory_position = cards.index({"kind": "source", "record": fallback})
+    assert cards[directory_position - 1]["kind"] == "context_record"
+    columns = [
+        dict(zip(source["column_fields"], row["record"]["values"], strict=True))
+        for row in cards
+        if row["kind"] == "column" and row["record"]["source"] == source["ref"]
+    ]
+    assert len(columns) == 67 and columns[-1]["is_natural_key"] is True
+    assert columns[-2]["is_natural_key"] is False
+
+    reader = build_downstream_readers(
+        "mapping",
+        values,
+        max_result_bytes=1600,
+        max_page_records=12,
+        max_cumulative_result_bytes=32_000,
+    )
+    page = reader.invoke("get_mapping_basis", {})
+    assert page["next_cursor"] is not None
+    items = list(page["items"])
+    while page["next_cursor"] is not None:
+        page = reader.invoke("get_mapping_basis", {"cursor": page["next_cursor"]})
+        items.extend(page["items"])
+    assert items == cards[: directory_position + 1]
+    assert (
+        reader.invoke("get_mapping_basis", {"candidate_refs": []})["items"]
+        == (reader.invoke("get_mapping_basis", {})["items"])
+    )
+    page = reader.invoke("get_mapping_basis", {"candidate_refs": [fallback["ref"]]})
+    assert page["next_cursor"] is not None
+    with pytest.raises(AgentContextToolRequestError):
+        reader.invoke(
+            "get_mapping_basis",
+            {"cursor": page["next_cursor"], "candidate_refs": [source["ref"]]},
+        )
+    selected = list(page["items"])
+    while page["next_cursor"] is not None:
+        page = reader.invoke("get_mapping_basis", {"cursor": page["next_cursor"]})
+        selected.extend(page["items"])
+    assert selected == cards[directory_position:]
+    for invalid in (
+        source["ref"],
+        "s999",
+        fallback["object_name"],
+        fallback["ref"].upper(),
+    ):
+        with pytest.raises(AgentContextToolRequestError):
+            reader.invoke(
+                "get_mapping_basis", {"candidate_refs": [fallback["ref"], invalid]}
+            )
+    assert "mapping_basis" not in values
+
+
+def test_saved_custom_mapping_prompt_resolves_only_named_jinja_inputs() -> None:
+    prep = mapping_preparation(execution_mode="one_shot", existing=True)
+    plan = prep.plan.agent_plan
+    prefix = "workflow.mapping.common.mapping_authoring.inputs."
+    stage = plan.stages[0].model_copy(
+        update={
+            "templates": PromptComponentTemplates(
+                system="The word mapping_basis here is ordinary text.",
+                instruction="{% for source in source_evidence %}{{ source.role }}{% endfor %}",
+            ),
+            "variables": tuple(
+                PromptVariableDefinition(
+                    name=name,
+                    resolver_key=prefix + name,
+                    data_type="json",
+                    is_required=False,
+                )
+                for name in ("source_evidence", "mapping_basis")
+            ),
+        }
+    )
+    # The older frozen prompt still resolves even without any data for a compact basis.
+    available: dict[str, object] = {"source_evidence": []}
+    result = project_prompt_input_values(
+        plan=plan,
+        stage=stage,
+        context={},
+        resolver_values={},
+        precomputed_values=available,
+        only_referenced=True,
+    )
+    assert result == {prefix + "source_evidence": []}

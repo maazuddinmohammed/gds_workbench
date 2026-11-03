@@ -1,0 +1,1599 @@
+{
+  "description": "Count duty assignment versions from a current register and a partially overlapping archive at a common business grain.",
+  "values": {
+    "subject_area_context": {
+      "name": "Duty assignments",
+      "definition": "Duty assignments and changes to their assigned roles.",
+      "input_count": 2
+    },
+    "selected_logical_entities": [
+      {
+        "selection_order": 1,
+        "entity": {
+          "logical_entity_schema_name": "silver",
+          "logical_entity_name": "DutyAssignment",
+          "logical_entity_definition": "Current assigned duty at its most recent effective time.",
+          "logical_entity_type": "association",
+          "logical_entity_grain": "One row per assignment number.",
+          "logical_entity_dependency_order": 0,
+          "logical_entity_is_active": true,
+          "logical_entity_is_locked": false,
+          "sources": [
+            {
+              "support_source_type": "object",
+              "source_object": {
+                "tenant_code": "GDS",
+                "system_code": "GDS",
+                "connection_code": "GDS",
+                "object_schema": "duty_raw",
+                "object_name": "current_assignment"
+              },
+              "is_active": true,
+              "is_locked": false,
+              "rationale": null
+            }
+          ]
+        },
+        "attributes": [
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "DutyAssignment",
+            "logical_attribute_name": "DutyAssignmentID",
+            "logical_attribute_definition": "Silver generated row identifier.",
+            "logical_attribute_data_type": "BIGINT",
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": true,
+            "logical_attribute_ordinal_position": 1,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "DutyAssignment",
+            "logical_attribute_name": "AssignmentNumber",
+            "logical_attribute_definition": "Identifier of the duty assignment.",
+            "logical_attribute_data_type": "STRING",
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_natural_key": true,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 2,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": [
+              {
+                "support_source_type": "attribute",
+                "source_attribute": {
+                  "tenant_code": "GDS",
+                  "system_code": "GDS",
+                  "connection_code": "GDS",
+                  "object_schema": "duty_raw",
+                  "object_name": "current_assignment",
+                  "attribute_name": "assignment_number"
+                },
+                "is_active": true,
+                "is_locked": false,
+                "rationale": null
+              }
+            ]
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "DutyAssignment",
+            "logical_attribute_name": "EffectiveAt",
+            "logical_attribute_definition": "Time when this version of the assignment became effective.",
+            "logical_attribute_data_type": "TIMESTAMP",
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 3,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": [
+              {
+                "support_source_type": "attribute",
+                "source_attribute": {
+                  "tenant_code": "GDS",
+                  "system_code": "GDS",
+                  "connection_code": "GDS",
+                  "object_schema": "duty_raw",
+                  "object_name": "current_assignment",
+                  "attribute_name": "effective_at"
+                },
+                "is_active": true,
+                "is_locked": false,
+                "rationale": null
+              }
+            ]
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "DutyAssignment",
+            "logical_attribute_name": "DutyRoleCode",
+            "logical_attribute_definition": "Code describing the duty assigned in this version.",
+            "logical_attribute_data_type": "STRING",
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 4,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": [
+              {
+                "support_source_type": "attribute",
+                "source_attribute": {
+                  "tenant_code": "GDS",
+                  "system_code": "GDS",
+                  "connection_code": "GDS",
+                  "object_schema": "duty_raw",
+                  "object_name": "current_assignment",
+                  "attribute_name": "duty_role_code"
+                },
+                "is_active": true,
+                "is_locked": false,
+                "rationale": null
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "selection_order": 2,
+        "entity": {
+          "logical_entity_schema_name": "silver",
+          "logical_entity_name": "DutyAssignmentHistory",
+          "logical_entity_definition": "Recorded earlier duty versions. During handover the archive may also carry the current version.",
+          "logical_entity_type": "history",
+          "logical_entity_grain": "One row per assignment number and effective timestamp.",
+          "logical_entity_dependency_order": 0,
+          "logical_entity_is_active": true,
+          "logical_entity_is_locked": false,
+          "sources": [
+            {
+              "support_source_type": "object",
+              "source_object": {
+                "tenant_code": "GDS",
+                "system_code": "GDS",
+                "connection_code": "GDS",
+                "object_schema": "duty_raw",
+                "object_name": "assignment_archive"
+              },
+              "is_active": true,
+              "is_locked": false,
+              "rationale": null
+            }
+          ]
+        },
+        "attributes": [
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "DutyAssignmentHistory",
+            "logical_attribute_name": "DutyAssignmentHistoryID",
+            "logical_attribute_definition": "Silver generated row identifier.",
+            "logical_attribute_data_type": "BIGINT",
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": true,
+            "logical_attribute_ordinal_position": 1,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": []
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "DutyAssignmentHistory",
+            "logical_attribute_name": "AssignmentNumber",
+            "logical_attribute_definition": "Identifier of the duty assignment.",
+            "logical_attribute_data_type": "STRING",
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_natural_key": true,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 2,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": [
+              {
+                "support_source_type": "attribute",
+                "source_attribute": {
+                  "tenant_code": "GDS",
+                  "system_code": "GDS",
+                  "connection_code": "GDS",
+                  "object_schema": "duty_raw",
+                  "object_name": "assignment_archive",
+                  "attribute_name": "assignment_number"
+                },
+                "is_active": true,
+                "is_locked": false,
+                "rationale": null
+              }
+            ]
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "DutyAssignmentHistory",
+            "logical_attribute_name": "EffectiveAt",
+            "logical_attribute_definition": "Time when this version of the assignment became effective.",
+            "logical_attribute_data_type": "TIMESTAMP",
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_natural_key": true,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 3,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": [
+              {
+                "support_source_type": "attribute",
+                "source_attribute": {
+                  "tenant_code": "GDS",
+                  "system_code": "GDS",
+                  "connection_code": "GDS",
+                  "object_schema": "duty_raw",
+                  "object_name": "assignment_archive",
+                  "attribute_name": "effective_at"
+                },
+                "is_active": true,
+                "is_locked": false,
+                "rationale": null
+              }
+            ]
+          },
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "DutyAssignmentHistory",
+            "logical_attribute_name": "DutyRoleCode",
+            "logical_attribute_definition": "Code describing the duty assigned in this version.",
+            "logical_attribute_data_type": "STRING",
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 4,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_is_active": true,
+            "logical_attribute_is_locked": false,
+            "sources": [
+              {
+                "support_source_type": "attribute",
+                "source_attribute": {
+                  "tenant_code": "GDS",
+                  "system_code": "GDS",
+                  "connection_code": "GDS",
+                  "object_schema": "duty_raw",
+                  "object_name": "assignment_archive",
+                  "attribute_name": "duty_role_code"
+                },
+                "is_active": true,
+                "is_locked": false,
+                "rationale": null
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "logical_links": [],
+    "source_context": [
+      {
+        "tenant_code": "EXAMPLE",
+        "tenant_description": "A fictional member association.",
+        "system_code": "DUTY",
+        "system_description": "Maintains duty assignments and their change records.",
+        "system_type_code": "SQL",
+        "system_type_description": "Relational database source read with SQL.",
+        "connection_code": "DUTY_LOCAL",
+        "connection_description": null,
+        "connection_type_code": "SQL_SERVER",
+        "connection_type_description": "Connection to a Microsoft SQL Server database.",
+        "zone_code": "source",
+        "zone_description": "Originating source data."
+      }
+    ],
+    "gds_context": [
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "zone_code": "gold",
+        "zone_description": "Dimensional model placement."
+      }
+    ],
+    "object_context": [
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "duty_raw",
+        "object_name": "current_assignment",
+        "object_description": "Current assigned duty at its most recent effective time.",
+        "zone_code": "bronze"
+      },
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "duty_raw",
+        "object_name": "assignment_archive",
+        "object_description": "Recorded earlier duty versions. During handover the archive may also carry the current version.",
+        "zone_code": "bronze"
+      }
+    ],
+    "object_attribute_context": [
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "duty_raw",
+        "object_name": "current_assignment",
+        "attributes": [
+          {
+            "attribute_name": "assignment_number",
+            "attribute_description": "Identifier of the duty assignment.",
+            "attribute_data_type": "STRING",
+            "attribute_inferred_data_type": "STRING",
+            "attribute_nullability": false,
+            "is_natural_key": true,
+            "registered_is_natural_key": true,
+            "is_primary_key": null,
+            "is_nullable": false,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "is_pii": null,
+            "profile": null
+          },
+          {
+            "attribute_name": "effective_at",
+            "attribute_description": "Time when this version of the assignment became effective.",
+            "attribute_data_type": "TIMESTAMP",
+            "attribute_inferred_data_type": "TIMESTAMP",
+            "attribute_nullability": false,
+            "is_natural_key": false,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": false,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "is_pii": null,
+            "profile": null
+          },
+          {
+            "attribute_name": "duty_role_code",
+            "attribute_description": "Code describing the duty assigned in this version.",
+            "attribute_data_type": "STRING",
+            "attribute_inferred_data_type": "STRING",
+            "attribute_nullability": false,
+            "is_natural_key": false,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": false,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "is_pii": null,
+            "profile": null
+          }
+        ],
+        "selected_attribute_names": [
+          "assignment_number",
+          "effective_at",
+          "duty_role_code"
+        ]
+      },
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "duty_raw",
+        "object_name": "assignment_archive",
+        "attributes": [
+          {
+            "attribute_name": "assignment_number",
+            "attribute_description": "Identifier of the duty assignment.",
+            "attribute_data_type": "STRING",
+            "attribute_inferred_data_type": "STRING",
+            "attribute_nullability": false,
+            "is_natural_key": true,
+            "registered_is_natural_key": true,
+            "is_primary_key": null,
+            "is_nullable": false,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "is_pii": null,
+            "profile": null
+          },
+          {
+            "attribute_name": "effective_at",
+            "attribute_description": "Time when this version of the assignment became effective.",
+            "attribute_data_type": "TIMESTAMP",
+            "attribute_inferred_data_type": "TIMESTAMP",
+            "attribute_nullability": false,
+            "is_natural_key": true,
+            "registered_is_natural_key": true,
+            "is_primary_key": null,
+            "is_nullable": false,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "is_pii": null,
+            "profile": null
+          },
+          {
+            "attribute_name": "duty_role_code",
+            "attribute_description": "Code describing the duty assigned in this version.",
+            "attribute_data_type": "STRING",
+            "attribute_inferred_data_type": "STRING",
+            "attribute_nullability": false,
+            "is_natural_key": false,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": false,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "is_pii": null,
+            "profile": null
+          }
+        ],
+        "selected_attribute_names": [
+          "assignment_number",
+          "effective_at",
+          "duty_role_code"
+        ]
+      }
+    ],
+    "ingestion_mapping": [
+      {
+        "source": {
+          "tenant_code": "EXAMPLE",
+          "system_code": "DUTY",
+          "connection_code": "DUTY_LOCAL",
+          "object_schema": "duty",
+          "object_name": "current_assignment",
+          "object_description": "Current assigned duty at its most recent effective time."
+        },
+        "target": {
+          "tenant_code": "GDS",
+          "system_code": "GDS",
+          "connection_code": "GDS",
+          "object_schema": "duty_raw",
+          "object_name": "current_assignment"
+        }
+      },
+      {
+        "source": {
+          "tenant_code": "EXAMPLE",
+          "system_code": "DUTY",
+          "connection_code": "DUTY_LOCAL",
+          "object_schema": "duty",
+          "object_name": "assignment_archive",
+          "object_description": "Recorded earlier duty versions. During handover the archive may also carry the current version."
+        },
+        "target": {
+          "tenant_code": "GDS",
+          "system_code": "GDS",
+          "connection_code": "GDS",
+          "object_schema": "duty_raw",
+          "object_name": "assignment_archive"
+        }
+      }
+    ],
+    "object_relationship_context": [],
+    "context_records": [
+      {
+        "context_record_id": "31a1b101-9792-4109-88ab-01851366f66e",
+        "context_group_name": "Duty reporting",
+        "context_type_name": "Dimensional Requirement",
+        "context_text": "The existing duty coverage report reads FactDutyAssignmentVersion. Count assignment versions by effective date and duty role, and let readers select current assignments. An assignment number and its effective timestamp identify one version. The current register is authoritative for its versions. During handover an archive copy may have the same assignment number and effective timestamp. In that case use the current row once; retain all other archive versions. The role code describes the assigned duty.",
+        "source_reference": null
+      }
+    ],
+    "existing_entities": {
+      "entities": [],
+      "attributes": [],
+      "relationships": []
+    },
+    "neighbor_entities": [],
+    "entity_directory": [],
+    "dimensional_fact_types": [
+      {
+        "code": "transaction",
+        "description": "One row per business event at its lowest detail."
+      },
+      {
+        "code": "periodic_snapshot",
+        "description": "One row per thing per period, such as daily stock levels."
+      },
+      {
+        "code": "accumulating_snapshot",
+        "description": "One row per process instance, updated as its milestones happen."
+      },
+      {
+        "code": "factless",
+        "description": "Records that something happened or applies, with no measures, such as attendance."
+      }
+    ],
+    "naming_instructions": "Use PascalCase for Dimensional entity and attribute names. Start each Entity name with its type: Dim for a Dimension, Fact for a Fact, Bridge for a Bridge (DimCustomer, FactSalesOrder, BridgeCustomerGroup). Surrogate and foreign key names end with Key.",
+    "audit_columns": {
+      "schema_version": "1.0",
+      "columns": [
+        {
+          "semantic_name": "SourceSystemID",
+          "data_type": "BIGINT",
+          "nullable": true,
+          "definition": "Originating source System identifier."
+        }
+      ]
+    },
+    "technical_columns": {
+      "schema_version": "1.0",
+      "dimension_surrogate_key": {
+        "semantic_name_template": "{entity_name}Key",
+        "data_type": "BIGINT",
+        "nullable": false,
+        "definition_template": "Surrogate key for {entity_name}."
+      },
+      "fact_bridge_foreign_key": {
+        "with_role_semantic_name_template": "{role_name}Key",
+        "without_role_semantic_name_template": "{entity_name}Key",
+        "definition_template": "Foreign key to {entity_name}."
+      },
+      "type_2": {
+        "effective_from": {
+          "semantic_name": "RecordStartTime",
+          "data_type": "TIMESTAMP",
+          "nullable": false,
+          "definition": "Inclusive start of this dimension version."
+        },
+        "effective_to": {
+          "semantic_name": "RecordEndTime",
+          "data_type": "TIMESTAMP",
+          "nullable": true,
+          "definition": "Exclusive end of this dimension version."
+        },
+        "is_current": {
+          "semantic_name": "IsCurrentRecord",
+          "data_type": "BOOLEAN",
+          "nullable": false,
+          "definition": "Whether this is the current dimension version."
+        }
+      }
+    },
+    "schemas": [
+      {
+        "schema_name": "gold",
+        "description": "Dimensional model schema."
+      }
+    ],
+    "dimensional_entity_scd_type": "type_1",
+    "coverage_threshold_percent": 100,
+    "logical_entities": [
+      {
+        "logical_entity_schema_name": "silver",
+        "logical_entity_name": "Customer",
+        "logical_entity_definition": "One row per ERP customer account.",
+        "logical_entity_type": "core",
+        "logical_entity_grain": "One row per customer_id.",
+        "logical_entity_dependency_order": 0,
+        "logical_entity_is_active": true,
+        "logical_entity_is_locked": false,
+        "sources": [
+          {
+            "support_source_type": "object",
+            "source_object": {
+              "tenant_code": "GDS",
+              "system_code": "WAREHOUSE",
+              "connection_code": "MAIN",
+              "object_schema": "bronze",
+              "object_name": "Customers"
+            },
+            "rationale": null,
+            "is_active": true,
+            "is_locked": false
+          }
+        ]
+      },
+      {
+        "logical_entity_schema_name": "silver",
+        "logical_entity_name": "SalesOrder",
+        "logical_entity_definition": "One row per order a customer places.",
+        "logical_entity_type": "transaction",
+        "logical_entity_grain": "One row per order_id.",
+        "logical_entity_dependency_order": 1,
+        "logical_entity_is_active": true,
+        "logical_entity_is_locked": false,
+        "sources": [
+          {
+            "support_source_type": "object",
+            "source_object": {
+              "tenant_code": "GDS",
+              "system_code": "WAREHOUSE",
+              "connection_code": "MAIN",
+              "object_schema": "bronze",
+              "object_name": "Orders"
+            },
+            "rationale": null,
+            "is_active": true,
+            "is_locked": false
+          }
+        ]
+      }
+    ],
+    "logical_attributes": [
+      {
+        "logical_entity_schema_name": "silver",
+        "logical_entity_name": "Customer",
+        "logical_attribute_name": "CustomerID",
+        "logical_attribute_definition": "Surrogate key for Customer.",
+        "logical_attribute_data_type": "BIGINT",
+        "logical_attribute_is_nullable": false,
+        "logical_attribute_is_natural_key": false,
+        "logical_attribute_is_surrogate_key": true,
+        "logical_attribute_ordinal_position": 1,
+        "logical_attribute_is_audit_column": false,
+        "logical_attribute_is_active": true,
+        "logical_attribute_is_locked": false,
+        "sources": []
+      },
+      {
+        "logical_entity_schema_name": "silver",
+        "logical_entity_name": "Customer",
+        "logical_attribute_name": "SourceCustomerNumber",
+        "logical_attribute_definition": "Business identifier of this ERP customer account.",
+        "logical_attribute_data_type": "BIGINT",
+        "logical_attribute_is_nullable": false,
+        "logical_attribute_is_natural_key": true,
+        "logical_attribute_is_surrogate_key": false,
+        "logical_attribute_ordinal_position": 2,
+        "logical_attribute_is_audit_column": false,
+        "logical_attribute_is_active": true,
+        "logical_attribute_is_locked": false,
+        "sources": [
+          {
+            "support_source_type": "attribute",
+            "source_attribute": {
+              "tenant_code": "GDS",
+              "system_code": "WAREHOUSE",
+              "connection_code": "MAIN",
+              "object_schema": "bronze",
+              "object_name": "Customers",
+              "attribute_name": "customer_id"
+            },
+            "rationale": null,
+            "is_active": true,
+            "is_locked": false
+          }
+        ]
+      },
+      {
+        "logical_entity_schema_name": "silver",
+        "logical_entity_name": "SalesOrder",
+        "logical_attribute_name": "SalesOrderID",
+        "logical_attribute_definition": "Surrogate key for SalesOrder.",
+        "logical_attribute_data_type": "BIGINT",
+        "logical_attribute_is_nullable": false,
+        "logical_attribute_is_natural_key": false,
+        "logical_attribute_is_surrogate_key": true,
+        "logical_attribute_ordinal_position": 1,
+        "logical_attribute_is_audit_column": false,
+        "logical_attribute_is_active": true,
+        "logical_attribute_is_locked": false,
+        "sources": []
+      },
+      {
+        "logical_entity_schema_name": "silver",
+        "logical_entity_name": "SalesOrder",
+        "logical_attribute_name": "CustomerID",
+        "logical_attribute_definition": "The Customer that placed this order.",
+        "logical_attribute_data_type": "BIGINT",
+        "logical_attribute_is_nullable": false,
+        "logical_attribute_is_natural_key": false,
+        "logical_attribute_is_surrogate_key": false,
+        "logical_attribute_ordinal_position": 2,
+        "logical_attribute_is_audit_column": false,
+        "logical_attribute_is_active": true,
+        "logical_attribute_is_locked": false,
+        "sources": [
+          {
+            "support_source_type": "attribute",
+            "source_attribute": {
+              "tenant_code": "GDS",
+              "system_code": "WAREHOUSE",
+              "connection_code": "MAIN",
+              "object_schema": "bronze",
+              "object_name": "Orders",
+              "attribute_name": "customer_id"
+            },
+            "rationale": null,
+            "is_active": true,
+            "is_locked": false
+          }
+        ]
+      }
+    ],
+    "logical_relationships": [
+      {
+        "from_logical_entity_schema_name": "silver",
+        "to_logical_entity_schema_name": "silver",
+        "from_logical_entity_name": "SalesOrder",
+        "from_logical_attribute_name": "CustomerID",
+        "to_logical_entity_name": "Customer",
+        "to_logical_attribute_name": "CustomerID",
+        "logical_relationship_cardinality": "many_to_one",
+        "logical_relationship_basis": "Analysis: Orders.customer_id -> Customers.customer_id, supported.",
+        "logical_relationship_is_active": true,
+        "logical_relationship_is_locked": false
+      }
+    ],
+    "dimensional_entities": [
+      {
+        "dimensional_entity_schema_name": "gold",
+        "dimensional_entity_name": "DimCustomer",
+        "dimensional_entity_definition": "One row per customer account.",
+        "dimensional_entity_type": "dimension",
+        "dimensional_fact_type": null,
+        "dimensional_entity_grain_definition": null,
+        "dimensional_entity_dependency_order": 0,
+        "dimensional_entity_is_active": true,
+        "dimensional_entity_is_locked": false,
+        "sources": [
+          {
+            "support_source_type": "logical_entity",
+            "source_logical_entity": {
+              "logical_entity_schema_name": "silver",
+              "logical_entity_name": "Customer"
+            },
+            "rationale": null,
+            "is_active": true,
+            "is_locked": false
+          }
+        ]
+      },
+      {
+        "dimensional_entity_schema_name": "gold",
+        "dimensional_entity_name": "FactSalesOrder",
+        "dimensional_entity_definition": "One row per order.",
+        "dimensional_entity_type": "fact",
+        "dimensional_fact_type": "transaction",
+        "dimensional_entity_grain_definition": "One row per order_id.",
+        "dimensional_entity_dependency_order": 1,
+        "dimensional_entity_is_active": true,
+        "dimensional_entity_is_locked": false,
+        "sources": [
+          {
+            "support_source_type": "logical_entity",
+            "source_logical_entity": {
+              "logical_entity_schema_name": "silver",
+              "logical_entity_name": "SalesOrder"
+            },
+            "rationale": null,
+            "is_active": true,
+            "is_locked": false
+          }
+        ]
+      }
+    ],
+    "dimensional_attributes": [
+      {
+        "dimensional_entity_schema_name": "gold",
+        "dimensional_entity_name": "DimCustomer",
+        "dimensional_attribute_name": "CustomerKey",
+        "dimensional_attribute_definition": "Surrogate key for DimCustomer.",
+        "dimensional_attribute_data_type": "BIGINT",
+        "dimensional_attribute_is_nullable": false,
+        "dimensional_attribute_ordinal_position": 1,
+        "dimensional_attribute_is_natural_key": false,
+        "dimensional_attribute_is_surrogate_key": true,
+        "dimensional_attribute_is_audit_column": false,
+        "dimensional_attribute_is_active": true,
+        "dimensional_attribute_is_locked": false,
+        "sources": []
+      },
+      {
+        "dimensional_entity_schema_name": "gold",
+        "dimensional_entity_name": "FactSalesOrder",
+        "dimensional_attribute_name": "CustomerKey",
+        "dimensional_attribute_definition": "Foreign key to DimCustomer.",
+        "dimensional_attribute_data_type": "BIGINT",
+        "dimensional_attribute_is_nullable": false,
+        "dimensional_attribute_ordinal_position": 1,
+        "dimensional_attribute_is_natural_key": false,
+        "dimensional_attribute_is_surrogate_key": false,
+        "dimensional_attribute_is_audit_column": false,
+        "dimensional_attribute_is_active": true,
+        "dimensional_attribute_is_locked": false,
+        "sources": []
+      }
+    ],
+    "dimensional_relationships": [
+      {
+        "from_dimensional_entity_schema_name": "gold",
+        "to_dimensional_entity_schema_name": "gold",
+        "from_dimensional_entity_name": "FactSalesOrder",
+        "from_dimensional_attribute_name": "CustomerKey",
+        "to_dimensional_entity_name": "DimCustomer",
+        "to_dimensional_attribute_name": "CustomerKey",
+        "dimensional_relationship_role_name": null,
+        "dimensional_relationship_basis": null,
+        "dimensional_relationship_is_active": true,
+        "dimensional_relationship_is_locked": false
+      }
+    ]
+  },
+  "output_schema": {
+    "$defs": {
+      "AttributeContextSourceRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "support_source_type": {
+            "const": "context_record",
+            "title": "Support Source Type",
+            "type": "string",
+            "description": "Populate support_source_type from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate support_source_type from current Snapshot evidence and the active workflow guide."
+          },
+          "context_record": {
+            "$ref": "#/$defs/ContextRecordReference",
+            "description": "Populate context_record from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate context_record from current Snapshot evidence and the active workflow guide."
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Rationale",
+            "description": "Populate rationale from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate rationale from current Snapshot evidence and the active workflow guide."
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean",
+            "description": "Use true for current records and false only for an intentional inactive replacement.",
+            "x-gds-population-guidance": "Use true for current records and false only for an intentional inactive replacement."
+          },
+          "is_locked": {
+            "title": "Is Locked",
+            "type": "boolean",
+            "const": false,
+            "description": "Populate is_locked from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate is_locked from current Snapshot evidence and the active workflow guide."
+          }
+        },
+        "required": [
+          "support_source_type",
+          "context_record",
+          "is_active",
+          "is_locked"
+        ],
+        "title": "AttributeContextSourceRecord",
+        "type": "object"
+      },
+      "AttributeLogicalSourceRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "support_source_type": {
+            "const": "logical_attribute",
+            "title": "Support Source Type",
+            "type": "string",
+            "description": "Populate support_source_type from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate support_source_type from current Snapshot evidence and the active workflow guide."
+          },
+          "source_logical_attribute": {
+            "$ref": "#/$defs/LogicalAttributeKey",
+            "description": "Populate source_logical_attribute from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate source_logical_attribute from current Snapshot evidence and the active workflow guide."
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Rationale",
+            "description": "Populate rationale from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate rationale from current Snapshot evidence and the active workflow guide."
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean",
+            "description": "Use true for current records and false only for an intentional inactive replacement.",
+            "x-gds-population-guidance": "Use true for current records and false only for an intentional inactive replacement."
+          },
+          "is_locked": {
+            "title": "Is Locked",
+            "type": "boolean",
+            "const": false,
+            "description": "Populate is_locked from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate is_locked from current Snapshot evidence and the active workflow guide."
+          }
+        },
+        "required": [
+          "support_source_type",
+          "source_logical_attribute",
+          "is_active",
+          "is_locked"
+        ],
+        "title": "AttributeLogicalSourceRecord",
+        "type": "object"
+      },
+      "ContextRecordReference": {
+        "additionalProperties": false,
+        "properties": {
+          "context_record_id": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "title": "Context Record Id",
+            "type": "string",
+            "description": "Use the exact Context Record UUID from the current Project Snapshot.",
+            "x-gds-population-guidance": "Use the exact Context Record UUID from the current Project Snapshot."
+          }
+        },
+        "required": [
+          "context_record_id"
+        ],
+        "title": "ContextRecordReference",
+        "type": "object"
+      },
+      "DimensionalAttributeRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "dimensional_entity_schema_name": {
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Dimensional Entity Schema Name",
+            "type": "string",
+            "description": "Use a schema from Project dimensional_schemas.",
+            "x-gds-population-guidance": "Use a schema from Project dimensional_schemas."
+          },
+          "dimensional_entity_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Dimensional Entity Name",
+            "type": "string",
+            "description": "Populate dimensional_entity_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_entity_name from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_attribute_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Dimensional Attribute Name",
+            "type": "string",
+            "description": "Populate dimensional_attribute_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_attribute_name from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_attribute_definition": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Dimensional Attribute Definition",
+            "type": "string",
+            "description": "Populate dimensional_attribute_definition from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_attribute_definition from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_attribute_data_type": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Dimensional Attribute Data Type",
+            "type": "string",
+            "description": "Populate dimensional_attribute_data_type from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_attribute_data_type from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_attribute_is_nullable": {
+            "title": "Dimensional Attribute Is Nullable",
+            "type": "boolean",
+            "description": "Populate dimensional_attribute_is_nullable from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_attribute_is_nullable from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_attribute_ordinal_position": {
+            "exclusiveMinimum": 0,
+            "title": "Dimensional Attribute Ordinal Position",
+            "type": "integer",
+            "description": "Populate dimensional_attribute_ordinal_position from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_attribute_ordinal_position from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_attribute_is_natural_key": {
+            "title": "Dimensional Attribute Is Natural Key",
+            "type": "boolean",
+            "description": "Populate dimensional_attribute_is_natural_key from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_attribute_is_natural_key from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_attribute_is_surrogate_key": {
+            "title": "Dimensional Attribute Is Surrogate Key",
+            "type": "boolean",
+            "description": "Populate dimensional_attribute_is_surrogate_key from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_attribute_is_surrogate_key from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_attribute_is_audit_column": {
+            "title": "Dimensional Attribute Is Audit Column",
+            "type": "boolean",
+            "description": "Populate dimensional_attribute_is_audit_column from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_attribute_is_audit_column from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_attribute_is_active": {
+            "title": "Dimensional Attribute Is Active",
+            "type": "boolean",
+            "description": "Populate dimensional_attribute_is_active from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_attribute_is_active from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_attribute_is_locked": {
+            "title": "Dimensional Attribute Is Locked",
+            "type": "boolean",
+            "const": false,
+            "description": "Populate dimensional_attribute_is_locked from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_attribute_is_locked from current Snapshot evidence and the active workflow guide."
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/$defs/DimensionalAttributeSourceRecord"
+            },
+            "title": "Sources",
+            "type": "array",
+            "description": "Populate sources from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate sources from current Snapshot evidence and the active workflow guide."
+          }
+        },
+        "required": [
+          "dimensional_entity_schema_name",
+          "dimensional_entity_name",
+          "dimensional_attribute_name",
+          "dimensional_attribute_definition",
+          "dimensional_attribute_data_type",
+          "dimensional_attribute_is_nullable",
+          "dimensional_attribute_ordinal_position",
+          "dimensional_attribute_is_natural_key",
+          "dimensional_attribute_is_surrogate_key",
+          "dimensional_attribute_is_audit_column",
+          "dimensional_attribute_is_active",
+          "dimensional_attribute_is_locked",
+          "sources"
+        ],
+        "title": "DimensionalAttributeRecord",
+        "type": "object",
+        "description": "One exact ID-free dimensional_attribute record shared by Project Snapshots and Project Change Sets.",
+        "x-gds-population-rules": [
+          "Use exact natural-key names from the current Snapshot; never database IDs.",
+          "Use only active, authorized records from this Project and its readable Source Tenants.",
+          "Retire instead of deleting: set is_active to false on model records, or status to inactive or deprecated where a record has status; resolve review questions locally.",
+          "Author business Attributes only; the backend projects surrogate-key, foreign-key, Type 2 and audit Attributes from Project policy.",
+          "Use PascalCase; surrogate and foreign keys end in Key unless user or Project policy overrides it."
+        ]
+      },
+      "DimensionalAttributeSourceRecord": {
+        "discriminator": {
+          "mapping": {
+            "context_record": "#/$defs/AttributeContextSourceRecord",
+            "logical_attribute": "#/$defs/AttributeLogicalSourceRecord"
+          },
+          "propertyName": "support_source_type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/AttributeLogicalSourceRecord"
+          },
+          {
+            "$ref": "#/$defs/AttributeContextSourceRecord"
+          }
+        ]
+      },
+      "DimensionalEntityRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "dimensional_entity_schema_name": {
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Dimensional Entity Schema Name",
+            "type": "string",
+            "description": "Use a schema from Project dimensional_schemas.",
+            "x-gds-population-guidance": "Use a schema from Project dimensional_schemas."
+          },
+          "dimensional_entity_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Dimensional Entity Name",
+            "type": "string",
+            "description": "Populate dimensional_entity_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_entity_name from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_entity_definition": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Dimensional Entity Definition",
+            "type": "string",
+            "description": "Populate dimensional_entity_definition from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_entity_definition from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_entity_type": {
+            "enum": [
+              "fact",
+              "dimension",
+              "bridge"
+            ],
+            "title": "Dimensional Entity Type",
+            "type": "string",
+            "description": "Populate dimensional_entity_type from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_entity_type from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_fact_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "transaction",
+                  "periodic_snapshot",
+                  "accumulating_snapshot",
+                  "factless"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An active fact type code for facts; null for dimensions and bridges."
+          },
+          "dimensional_entity_grain_definition": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dimensional Entity Grain Definition",
+            "description": "Populate dimensional_entity_grain_definition from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_entity_grain_definition from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_entity_dependency_order": {
+            "minimum": 0,
+            "title": "Dimensional Entity Dependency Order",
+            "type": "integer",
+            "description": "Populate dimensional_entity_dependency_order from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_entity_dependency_order from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_entity_is_active": {
+            "title": "Dimensional Entity Is Active",
+            "type": "boolean",
+            "description": "Populate dimensional_entity_is_active from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_entity_is_active from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_entity_is_locked": {
+            "title": "Dimensional Entity Is Locked",
+            "type": "boolean",
+            "const": false,
+            "description": "Populate dimensional_entity_is_locked from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_entity_is_locked from current Snapshot evidence and the active workflow guide."
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/$defs/DimensionalEntitySourceRecord"
+            },
+            "title": "Sources",
+            "type": "array",
+            "description": "Populate sources from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate sources from current Snapshot evidence and the active workflow guide."
+          }
+        },
+        "required": [
+          "dimensional_entity_schema_name",
+          "dimensional_entity_name",
+          "dimensional_entity_definition",
+          "dimensional_entity_type",
+          "dimensional_fact_type",
+          "dimensional_entity_grain_definition",
+          "dimensional_entity_dependency_order",
+          "dimensional_entity_is_active",
+          "dimensional_entity_is_locked",
+          "sources"
+        ],
+        "title": "DimensionalEntityRecord",
+        "type": "object",
+        "description": "One exact ID-free dimensional_entity record shared by Project Snapshots and Project Change Sets.",
+        "x-gds-population-rules": [
+          "Use exact natural-key names from the current Snapshot; never database IDs.",
+          "Use only active, authorized records from this Project and its readable Source Tenants.",
+          "Retire instead of deleting: set is_active to false on model records, or status to inactive or deprecated where a record has status; resolve review questions locally.",
+          "Choose dimensional_entity_schema_name from Project dimensional_schemas.",
+          "Use schema-qualified Logical Entities and Attributes as sources.",
+          "Follow the Kimball sequence: select the business process, declare fact grain, identify Dimensions, then identify Facts.",
+          "Use PascalCase and start each name with its type, Dim, Fact or Bridge, unless user or Project policy says otherwise."
+        ]
+      },
+      "DimensionalEntitySourceRecord": {
+        "discriminator": {
+          "mapping": {
+            "context_record": "#/$defs/LogicalContextSourceRecord",
+            "logical_entity": "#/$defs/DimensionalLogicalEntitySourceRecord"
+          },
+          "propertyName": "support_source_type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/DimensionalLogicalEntitySourceRecord"
+          },
+          {
+            "$ref": "#/$defs/LogicalContextSourceRecord"
+          }
+        ]
+      },
+      "DimensionalLogicalEntitySourceRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "support_source_type": {
+            "const": "logical_entity",
+            "title": "Support Source Type",
+            "type": "string",
+            "description": "Populate support_source_type from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate support_source_type from current Snapshot evidence and the active workflow guide."
+          },
+          "source_logical_entity": {
+            "$ref": "#/$defs/LogicalEntityKey",
+            "description": "Populate source_logical_entity from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate source_logical_entity from current Snapshot evidence and the active workflow guide."
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Rationale",
+            "description": "Populate rationale from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate rationale from current Snapshot evidence and the active workflow guide."
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean",
+            "description": "Use true for current records and false only for an intentional inactive replacement.",
+            "x-gds-population-guidance": "Use true for current records and false only for an intentional inactive replacement."
+          },
+          "is_locked": {
+            "title": "Is Locked",
+            "type": "boolean",
+            "const": false,
+            "description": "Populate is_locked from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate is_locked from current Snapshot evidence and the active workflow guide."
+          }
+        },
+        "required": [
+          "support_source_type",
+          "source_logical_entity",
+          "is_active",
+          "is_locked"
+        ],
+        "title": "DimensionalLogicalEntitySourceRecord",
+        "type": "object"
+      },
+      "DimensionalRelationshipRecord": {
+        "additionalProperties": false,
+        "description": "One exact ID-free dimensional_relationship record shared by Project Snapshots and Project Change Sets.",
+        "properties": {
+          "from_dimensional_entity_schema_name": {
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "From Dimensional Entity Schema Name",
+            "type": "string",
+            "description": "Populate from_dimensional_entity_schema_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate from_dimensional_entity_schema_name from current Snapshot evidence and the active workflow guide."
+          },
+          "to_dimensional_entity_schema_name": {
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "To Dimensional Entity Schema Name",
+            "type": "string",
+            "description": "Populate to_dimensional_entity_schema_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate to_dimensional_entity_schema_name from current Snapshot evidence and the active workflow guide."
+          },
+          "from_dimensional_entity_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "From Dimensional Entity Name",
+            "type": "string",
+            "description": "Populate from_dimensional_entity_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate from_dimensional_entity_name from current Snapshot evidence and the active workflow guide."
+          },
+          "from_dimensional_attribute_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "From Dimensional Attribute Name",
+            "type": "string",
+            "description": "Populate from_dimensional_attribute_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate from_dimensional_attribute_name from current Snapshot evidence and the active workflow guide."
+          },
+          "to_dimensional_entity_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "To Dimensional Entity Name",
+            "type": "string",
+            "description": "Populate to_dimensional_entity_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate to_dimensional_entity_name from current Snapshot evidence and the active workflow guide."
+          },
+          "to_dimensional_attribute_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "To Dimensional Attribute Name",
+            "type": "string",
+            "description": "Populate to_dimensional_attribute_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate to_dimensional_attribute_name from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_relationship_role_name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Dimensional Relationship Role Name",
+            "description": "Populate dimensional_relationship_role_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_relationship_role_name from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_relationship_basis": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Dimensional Relationship Basis",
+            "description": "Populate dimensional_relationship_basis from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_relationship_basis from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_relationship_is_active": {
+            "title": "Dimensional Relationship Is Active",
+            "type": "boolean",
+            "description": "Populate dimensional_relationship_is_active from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_relationship_is_active from current Snapshot evidence and the active workflow guide."
+          },
+          "dimensional_relationship_is_locked": {
+            "title": "Dimensional Relationship Is Locked",
+            "type": "boolean",
+            "const": false,
+            "description": "Populate dimensional_relationship_is_locked from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate dimensional_relationship_is_locked from current Snapshot evidence and the active workflow guide."
+          }
+        },
+        "required": [
+          "from_dimensional_entity_schema_name",
+          "to_dimensional_entity_schema_name",
+          "from_dimensional_entity_name",
+          "from_dimensional_attribute_name",
+          "to_dimensional_entity_name",
+          "to_dimensional_attribute_name",
+          "dimensional_relationship_is_active",
+          "dimensional_relationship_is_locked"
+        ],
+        "title": "DimensionalRelationshipRecord",
+        "type": "object",
+        "x-gds-population-rules": [
+          "Use exact natural-key names from the current Snapshot; never database IDs.",
+          "Use only active, authorized records from this Project and its readable Source Tenants.",
+          "Retire instead of deleting: set is_active to false on model records, or status to inactive or deprecated where a record has status; resolve review questions locally.",
+          "Point child -> parent: from a fact, bridge or outrigger foreign-key Attribute to the dimension's key Attribute. One foreign-key Attribute has one dimension.",
+          "Name a role only for role-playing dimensions; write a basis only when the link does not follow a Logical Relationship."
+        ]
+      },
+      "LogicalAttributeKey": {
+        "additionalProperties": false,
+        "properties": {
+          "logical_entity_schema_name": {
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Logical Entity Schema Name",
+            "type": "string",
+            "description": "Use an exact schema configured in Project logical_schemas.",
+            "x-gds-population-guidance": "Use an exact schema configured in Project logical_schemas."
+          },
+          "logical_entity_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Logical Entity Name",
+            "type": "string",
+            "description": "Populate logical_entity_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate logical_entity_name from current Snapshot evidence and the active workflow guide."
+          },
+          "logical_attribute_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Logical Attribute Name",
+            "type": "string",
+            "description": "Populate logical_attribute_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate logical_attribute_name from current Snapshot evidence and the active workflow guide."
+          }
+        },
+        "required": [
+          "logical_entity_schema_name",
+          "logical_entity_name",
+          "logical_attribute_name"
+        ],
+        "title": "LogicalAttributeKey",
+        "type": "object"
+      },
+      "LogicalContextSourceRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "support_source_type": {
+            "const": "context_record",
+            "title": "Support Source Type",
+            "type": "string",
+            "description": "Populate support_source_type from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate support_source_type from current Snapshot evidence and the active workflow guide."
+          },
+          "context_record": {
+            "$ref": "#/$defs/ContextRecordReference",
+            "description": "Populate context_record from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate context_record from current Snapshot evidence and the active workflow guide."
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Rationale",
+            "description": "Populate rationale from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate rationale from current Snapshot evidence and the active workflow guide."
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean",
+            "description": "Use true for current records and false only for an intentional inactive replacement.",
+            "x-gds-population-guidance": "Use true for current records and false only for an intentional inactive replacement."
+          },
+          "is_locked": {
+            "title": "Is Locked",
+            "type": "boolean",
+            "const": false,
+            "description": "Populate is_locked from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate is_locked from current Snapshot evidence and the active workflow guide."
+          }
+        },
+        "required": [
+          "support_source_type",
+          "context_record",
+          "is_active",
+          "is_locked"
+        ],
+        "title": "LogicalContextSourceRecord",
+        "type": "object"
+      },
+      "LogicalEntityKey": {
+        "additionalProperties": false,
+        "properties": {
+          "logical_entity_schema_name": {
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Logical Entity Schema Name",
+            "type": "string",
+            "description": "Use an exact schema configured in Project logical_schemas.",
+            "x-gds-population-guidance": "Use an exact schema configured in Project logical_schemas."
+          },
+          "logical_entity_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Logical Entity Name",
+            "type": "string",
+            "description": "Populate logical_entity_name from current Snapshot evidence and the active workflow guide.",
+            "x-gds-population-guidance": "Populate logical_entity_name from current Snapshot evidence and the active workflow guide."
+          }
+        },
+        "required": [
+          "logical_entity_schema_name",
+          "logical_entity_name"
+        ],
+        "title": "LogicalEntityKey",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "entities": {
+        "items": {
+          "$ref": "#/$defs/DimensionalEntityRecord"
+        },
+        "maxItems": 20000,
+        "title": "Entities",
+        "type": "array"
+      },
+      "attributes": {
+        "items": {
+          "$ref": "#/$defs/DimensionalAttributeRecord"
+        },
+        "maxItems": 20000,
+        "title": "Attributes",
+        "type": "array"
+      },
+      "relationships": {
+        "items": {
+          "$ref": "#/$defs/DimensionalRelationshipRecord"
+        },
+        "maxItems": 20000,
+        "title": "Relationships",
+        "type": "array"
+      }
+    },
+    "required": [
+      "entities",
+      "attributes",
+      "relationships"
+    ],
+    "title": "_DimensionalCandidate",
+    "type": "object",
+    "description": "Aim to cover all selected Logical Entities through active source mappings in the resulting Dimensional Model. The backend coverage target is 100% of distinct Logical Entities selected for this run, rounded up, including unchanged applied records. Below this target, use repair feedback to improve supported coverage. Repair source_refs lists up to 50 missing input identities per attempt. Consolidation is allowed when supported by grain and business meaning. Do not return a sample or invent source mappings merely to claim coverage. Dimensional Attributes may select and aggregate relevant Logical Attributes for the analytical design.\n\nCoverage repair instructions:\n1. Read context.repair.validation_issues. The coverage message states the covered/selected count, required count and number of additional distinct inputs needed. At the default 60% target, 15/30 requires 3 more Logical Entities to reach 18/30, not 3 more output dimensions/facts and not necessarily all 15 missing inputs.\n2. Each source_refs entry is a missing selected Logical Entity's complete schema/name identity. Match it to the supplied Logical design, source evidence and analytical requirements; use enabled readers when needed. Check whether its support is absent, inactive, on an inactive Entity or attached to the wrong identity. The list is bounded and may be shortened further when source_refs_truncated is true; do not treat it as the entire selection.\n3. Where the evidence supports an existing or proposed dimension, fact or bridge's analytical role and grain, add or correct its entities[].sources entry with support_source_type 'logical_entity', the exact source_logical_entity identity and is_active true; its parent dimensional_entity_is_active must also be true. Otherwise create a separate well-supported Entity with its required Attributes and valid references. Preserve locks and deliberate inactive records; never reactivate them, merge incompatible grains or invent links merely to increase coverage.\n4. Preserve valid work from repair.previous_candidate. Attempts are not automatically accumulated: return the complete corrected candidate, not a patch containing only the missing inputs. Unchanged applied records need not be repeated. If previous_candidate_omitted is true, rebuild from the rendered evidence and enabled readers.\n5. Recount distinct selected Logical Entities across active proposed and retained support, and resolve every other validation issue. Repeated references, unselected sources, Context-only support and Attribute-only mappings do not increase Entity coverage. Keep unsupported gaps unresolved using existing definition/rationale fields where appropriate. Return only the candidate JSON; do not add a coverage report or new output fields."
+  },
+  "expect": {
+    "list": "entities",
+    "key": [
+      "dimensional_entity_name",
+      "dimensional_entity_type",
+      "dimensional_fact_type"
+    ],
+    "expected": [
+      {
+        "dimensional_entity_name": "FactDutyAssignmentVersion",
+        "dimensional_entity_type": "fact",
+        "dimensional_fact_type": "factless"
+      }
+    ],
+    "forbidden": []
+  }
+}

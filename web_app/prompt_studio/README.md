@@ -153,6 +153,9 @@ the production model, so confirm a kept change with a real Run.
 
 - Use made-up data only. Never paste real tenant metadata, prompts from Runs or physical rows.
 - `values` must match each variable's structure; `build` and `pack` check them.
+- For a Mapping fixture, edit the target, readiness, saved Mapping, source evidence
+  and support records. Studio derives `mapping_basis` from those inputs when it
+  reads the fixture, so both prompt versions see the same evidence.
 - `fixture` fills `output_schema` for the Analysis stages. For other stages, copy the stage
   validator's `output_schema()` from the backend.
 - Only `one_shot` stages can be tested: tool stages need live tool results.

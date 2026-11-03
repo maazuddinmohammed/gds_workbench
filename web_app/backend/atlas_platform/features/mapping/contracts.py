@@ -9,6 +9,7 @@ from atlas_mcp.domain.modeling_records import has_mapping_transformation_content
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
 type JsonObject = dict[str, JsonValue]
+MAX_MAPPING_OBJECT_BYTES = 524_288
 
 
 class MappingContractModel(BaseModel):
@@ -35,7 +36,7 @@ class MappingObjectCandidate(MappingContractModel):
     @field_validator("mapping_transformation_document")
     @classmethod
     def normalize_blank(cls, value: JsonObject | None) -> JsonObject | None:
-        if mapping_json_size(value) > 524_288:
+        if mapping_json_size(value) > MAX_MAPPING_OBJECT_BYTES:
             raise ValueError("Mapping transformation document exceeds 524,288 bytes")
         return value if has_mapping_transformation_content(value) else None
 

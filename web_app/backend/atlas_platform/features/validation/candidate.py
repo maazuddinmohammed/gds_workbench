@@ -132,6 +132,17 @@ class _AgentValidationCheck(BaseModel):
     )
 
 
+class _RetainedValidationCheck(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    keep_existing_check: str = Field(
+        min_length=1,
+        max_length=200,
+        pattern=r"\S",
+        description="Keep the named active Check unchanged in this existing active Group.",
+    )
+
+
 class _AgentValidationGroup(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -146,7 +157,7 @@ class _AgentValidationGroup(BaseModel):
         min_length=1,
         description="Optional purpose and Validation coverage; use null when unnecessary.",
     )
-    validation_checks: list[_AgentValidationCheck] = Field(
+    validation_checks: list[_AgentValidationCheck | _RetainedValidationCheck] = Field(
         min_length=1,
         max_length=_MAX_CHECKS_PER_GROUP,
         description="Complete desired active Check list for this Group.",
@@ -180,6 +191,12 @@ class ValidatedValidationSystemCandidate:
 class ValidationSystemCandidateValidator:
     def __init__(self, *, context: ValidationSystemAuthoringContext) -> None:
         self._context = context
+        self._active_group_keys = {
+            _group_key(row) for row in context.applied_groups if row.is_active
+        }
+        self._active_checks = {
+            _check_key(row): row for row in context.applied_checks if row.is_active
+        }
 
     def output_schema(self) -> dict[str, JsonValue]:
         return cast(dict[str, JsonValue], _AgentValidationSystemCandidate.model_json_schema())
@@ -277,7 +294,11 @@ class ValidationSystemCandidateValidator:
                     )
                 )
             check_names = [
-                normalize_project_key_value(check.validation_check_name)
+                normalize_project_key_value(
+                    check.keep_existing_check
+                    if isinstance(check, _RetainedValidationCheck)
+                    else check.validation_check_name
+                )
                 for check in group.validation_checks
             ]
             if len(check_names) != len(set(check_names)):
@@ -290,50 +311,57 @@ class ValidationSystemCandidateValidator:
                 )
             contract_path: tuple[str | int, ...] = ("validation_groups", group_index)
             try:
-                groups.append(
-                    ValidationGroupRecord(
-                        is_locked=False,
-                        tenant_code=self._context.tenant_code,
-                        system_code=self._context.system_code,
-                        validation_group_name=group_name,
-                        validation_group_description=group.validation_group_description,
-                        is_active=True,
-                    )
+                desired_group = ValidationGroupRecord(
+                    is_locked=False,
+                    tenant_code=self._context.tenant_code,
+                    system_code=self._context.system_code,
+                    validation_group_name=group_name,
+                    validation_group_description=group.validation_group_description,
+                    is_active=True,
                 )
-                for check_index, check in enumerate(group.validation_checks):
+                groups.append(desired_group)
+                parent_key = _group_key(desired_group)
+                for check_index, entry in enumerate(group.validation_checks):
                     contract_path = (
                         "validation_groups",
                         group_index,
                         "validation_checks",
                         check_index,
                     )
+                    if isinstance(entry, _RetainedValidationCheck):
+                        key = (*parent_key, check_names[check_index])
+                        check = self._active_checks.get(key)
+                        if check is None or parent_key not in self._active_group_keys:
+                            raise _CandidateIssueError(
+                                AgentValidationIssue(
+                                    code="candidate.validation_check_reference",
+                                    path=(*contract_path, "keep_existing_check"),
+                                    message=(
+                                        "Only an active Check in this existing active Group "
+                                        "can be retained."
+                                    ),
+                                )
+                            )
+                    else:
+                        check = entry
                     _validate_query(
                         check.validation_query_sql,
                         must_return_rows=(
                             check.validation_comparison_operator != "executes_successfully"
                         ),
-                        path=(
-                            "validation_groups",
-                            group_index,
-                            "validation_checks",
-                            check_index,
-                            "validation_query_sql",
-                        ),
+                        path=(*contract_path, "validation_query_sql"),
                     )
                     if check.validation_comparison_query_sql is not None:
                         _validate_query(
                             check.validation_comparison_query_sql,
                             must_return_rows=True,
-                            path=(
-                                "validation_groups",
-                                group_index,
-                                "validation_checks",
-                                check_index,
-                                "validation_comparison_query_sql",
-                            ),
+                            path=(*contract_path, "validation_comparison_query_sql"),
                         )
-                    comparison_value = check.validation_comparison_value
                     _validate_check_quality(check, path=contract_path)
+                    if isinstance(check, ValidationCheckRecord):
+                        checks.append(check)
+                        continue
+                    comparison_value = check.validation_comparison_value
                     checks.append(
                         ValidationCheckRecord(
                             is_locked=False,
@@ -489,7 +517,9 @@ class _CandidateIssueError(Exception):
         self.issue = issue
 
 
-def _validate_check_quality(check: _AgentValidationCheck, *, path: tuple[str | int, ...]) -> None:
+def _validate_check_quality(
+    check: _AgentValidationCheck | ValidationCheckRecord, *, path: tuple[str | int, ...]
+) -> None:
     """Reject provably uninformative patterns; business coverage still needs review."""
     statements = [
         item

@@ -82,9 +82,15 @@ async def test_review_example_delivers_complete_inputs_and_valid_sql() -> None:
         (
             1,
             ("ERP",),
-            3,
-            ("SourceOrderLineID", "CustomerName", "NetAmount", "SourceSystemID"),
-            {("bronze_erp", "order_line"), ("bronze_erp", "customer")},
+            1,
+            (
+                "SourceOrderLineID",
+                "BillToCustomerID",
+                "ShipToCustomerNumber",
+                "NetAmount",
+                "SourceSystemID",
+            ),
+            {("bronze_erp", "order_line"), ("silver", "Customer")},
         ),
         (
             2,
@@ -97,11 +103,11 @@ async def test_review_example_delivers_complete_inputs_and_valid_sql() -> None:
             3,
             ("CRM",),
             1,
-            ("SourceCustomerID", "CustomerName", "SourceSystemID"),
+            ("SourceCustomerID", "CustomerName"),
             {("bronze_crm", "customer")},
         ),
     ],
-    ids=("direct", "staged_join", "combined_systems", "partial_mapping"),
+    ids=("direct", "role_lookups", "combined_systems", "partial_mapping"),
 )
 async def test_sql_examples_parse_and_pass_real_artifact_validation(
     example_index: int,
@@ -180,10 +186,31 @@ async def test_sql_examples_parse_and_pass_real_artifact_validation(
             if statement
             for join in statement.find_all(exp.Join)
         ]
-        assert len(joins) == 1 and joins[0].side == "LEFT"
-        assert joins[0].args.get("on") is not None
-        assert statements[0] is not None
-        assert len(list(statements[0].find_all(exp.Where))) == 1
+        assert len(joins) == 2
+        for join, role in zip(joins, ("bill", "ship"), strict=True):
+            assert join.side == "LEFT"
+            assert join.this.alias == role
+            predicate = join.args["on"]
+            assert {(col.table, col.name) for col in predicate.find_all(exp.Column)} == {
+                (role, "SourceCustomerNumber"),
+                ("l", f"{role}_to_number"),
+                (role, "SourceSystemID"),
+            }
+            assert {literal.this for literal in predicate.find_all(exp.Literal)} == {"22"}
+            assert (predicate.find(exp.Trim) is not None) == (role == "bill")
+        assert isinstance(final, exp.Select)
+        role_outputs = {
+            item.alias: (item.this.table, item.this.name)
+            for item in final.selects
+            if isinstance(item, exp.Alias) and isinstance(item.this, exp.Column)
+        }
+        assert role_outputs == {
+            "BillToCustomerID": ("bill", "CustomerID"),
+            "ShipToCustomerNumber": ("ship", "SourceCustomerNumber"),
+        }
+        where = final.args.get("where")
+        assert isinstance(where, exp.Where)
+        assert {(col.table, col.name) for col in where.find_all(exp.Column)} == {("l", "status")}
     elif example_index == 3:
         assert isinstance(final, exp.Select)
         placeholder = final.selects[1]

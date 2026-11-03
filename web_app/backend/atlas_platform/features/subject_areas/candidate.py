@@ -53,7 +53,9 @@ class _Answer(BaseModel):
 
 
 class _AreaAnswer(_Answer):
-    name: _Name = Field(description="Business domain name, such as Sales or Human Resources.")
+    name: _Name = Field(
+        description="Name of a business subject or process, such as Policy or Claims."
+    )
     definition: NonblankText | None = Field(
         default=None,
         description=(
@@ -133,14 +135,13 @@ class SubjectAreaCandidateValidator:
     def output_schema(self) -> dict[str, JsonValue]:
         schema = cast(dict[str, JsonValue], deepcopy(_SubjectAreaAnswer.model_json_schema()))
         schema["description"] = (
-            "Group every table in table_index into Subject Areas: broad business domains, each "
-            "designed by one Logical Build call. Cite tables by table_index id. "
+            "Group the business tables in table_index by subject or process. Each Subject Area "
+            "supplies one Logical Build call. Cite tables by table_index id. "
             "Return new areas and saved areas you change; a listed area's tables replace its "
             "saved unlocked tables from table_index, and its other tables stay. Put each "
             "remaining technical table in unassigned. Retire saved areas by name; nothing is "
             "deleted. On repair, fix every context.repair.validation_issues entry and return the "
-            "complete "
-            "corrected answer, not a patch."
+            "complete corrected answer, not a patch."
         )
         return schema
 

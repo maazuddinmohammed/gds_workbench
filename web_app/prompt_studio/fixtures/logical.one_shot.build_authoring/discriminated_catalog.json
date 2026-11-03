@@ -1,0 +1,799 @@
+{
+  "description": "Two governed reference lists share physical storage and carry an opaque text field.",
+  "values": {
+    "naming_instructions": "Use PascalCase for Logical entity, attribute, and relationship names. Identifier Attribute names end with ID, with both I and D uppercase.",
+    "schemas": [
+      {
+        "schema_name": "silver",
+        "description": "Logical model schema."
+      }
+    ],
+    "logical_entity_scd_type": "type_1",
+    "audit_columns": {
+      "schema_version": "1.0",
+      "columns": [
+        {
+          "semantic_name": "SourceSystemID",
+          "data_type": "BIGINT",
+          "nullable": true,
+          "definition": "Originating source System identifier."
+        }
+      ]
+    },
+    "coverage_threshold_percent": 70,
+    "logical_entity_types": [
+      {
+        "code": "core",
+        "description": "A main business thing with its own identity, such as Customer or Product."
+      },
+      {
+        "code": "transaction",
+        "description": "A business document or exchange, such as SalesOrder or Invoice. Its lines are transaction_line."
+      },
+      {
+        "code": "transaction_line",
+        "description": "One line of a transaction, such as SalesOrderLine or InvoiceLine."
+      },
+      {
+        "code": "reference",
+        "description": "A short list of codes and their meanings, such as Country or OrderStatus."
+      },
+      {
+        "code": "association",
+        "description": "Links entities many-to-many, such as ProductCategory."
+      },
+      {
+        "code": "event",
+        "description": "Something that happened at a point in time, such as a login or a shipment scan."
+      },
+      {
+        "code": "history",
+        "description": "Past versions of another entity"
+      },
+      {
+        "code": "other",
+        "description": "None of the listed types fits; the entity definition says what it is."
+      }
+    ],
+    "subject_area_context": {
+      "name": "Fulfilment Reference Data",
+      "definition": "Shipping options and return reasons maintained by the fulfilment team.",
+      "input_count": 1
+    },
+    "table_index": [
+      {
+        "table": "t1",
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "dispatch_raw",
+        "object_name": "reference_catalog"
+      }
+    ],
+    "existing_entities": {
+      "entities": [],
+      "relationships": []
+    },
+    "neighbor_entities": [],
+    "entity_directory": [],
+    "source_context": [
+      {
+        "tenant_code": "EXAMPLE",
+        "tenant_description": "A fictional distributor.",
+        "system_code": "DISPATCH",
+        "system_description": "Dispatch and returns administration.",
+        "system_type_code": "SQL",
+        "system_type_description": "Relational database source read with SQL.",
+        "connection_code": "DISPATCH_LOCAL",
+        "connection_description": "Source metadata for this synthetic catalog.",
+        "connection_type_code": "SQL_SERVER",
+        "connection_type_description": "Connection to a Microsoft SQL Server database.",
+        "zone_code": "source",
+        "zone_description": "Originating source data."
+      }
+    ],
+    "gds_context": [
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "zone_code": "bronze",
+        "zone_description": "Raw copies of source tables in the lake."
+      }
+    ],
+    "object_context": [
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "dispatch_raw",
+        "object_name": "reference_catalog",
+        "object_description": "One row per family and local code. The same code can be reused in different families.",
+        "zone_code": "bronze"
+      }
+    ],
+    "object_attribute_context": [
+      {
+        "tenant_code": "GDS",
+        "system_code": "GDS",
+        "connection_code": "GDS",
+        "object_schema": "dispatch_raw",
+        "object_name": "reference_catalog",
+        "attributes": [
+          {
+            "attribute_name": "family",
+            "attribute_description": "Catalog family discriminator.",
+            "attribute_data_type": "STRING",
+            "attribute_inferred_data_type": "STRING",
+            "attribute_nullability": false,
+            "is_natural_key": true,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": true,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "local_code",
+            "attribute_description": "Code unique within its family.",
+            "attribute_data_type": "STRING",
+            "attribute_inferred_data_type": "STRING",
+            "attribute_nullability": false,
+            "is_natural_key": true,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": true,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "label",
+            "attribute_description": "Business label for the code.",
+            "attribute_data_type": "STRING",
+            "attribute_inferred_data_type": "STRING",
+            "attribute_nullability": false,
+            "is_natural_key": false,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          },
+          {
+            "attribute_name": "related_codes_text",
+            "attribute_description": "Related codes received as text. The encoding and member identity are undocumented.",
+            "attribute_data_type": "STRING",
+            "attribute_inferred_data_type": "STRING",
+            "attribute_nullability": true,
+            "is_natural_key": false,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": null,
+            "registered_is_natural_key": false,
+            "is_primary_key": null,
+            "is_nullable": null,
+            "is_pii": null
+          }
+        ],
+        "selected_attribute_names": [
+          "family",
+          "local_code",
+          "label",
+          "related_codes_text"
+        ]
+      }
+    ],
+    "ingestion_mapping": [
+      {
+        "source": {
+          "tenant_code": "EXAMPLE",
+          "system_code": "DISPATCH",
+          "connection_code": "DISPATCH_LOCAL",
+          "object_schema": "source",
+          "object_name": "reference_catalog",
+          "object_description": null
+        },
+        "target": {
+          "tenant_code": "GDS",
+          "system_code": "GDS",
+          "connection_code": "GDS",
+          "object_schema": "dispatch_raw",
+          "object_name": "reference_catalog"
+        }
+      }
+    ],
+    "object_relationship_context": [],
+    "context_records": [
+      {
+        "context_record_id": "db9ccca1-6f0b-4541-8b24-4de5e109e724",
+        "context_group_name": "Fulfilment",
+        "context_type_name": "Decision",
+        "context_text": "Fulfilment owns two independent reference lists. DispatchMethod supplies dispatch options where family = 'D'. ReturnReason supplies return reasons where family = 'R'. Each list identifies entries by local_code. The label and original related-codes text belong to each entry.",
+        "source_reference": null
+      }
+    ]
+  },
+  "output_schema": {
+    "$defs": {
+      "_AttributeRef": {
+        "additionalProperties": false,
+        "properties": {
+          "schema": {
+            "description": "The Entity's schema.",
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Schema",
+            "type": "string"
+          },
+          "entity": {
+            "description": "The Entity's name.",
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Entity",
+            "type": "string"
+          },
+          "attribute": {
+            "description": "The foreign-key Attribute of the child Entity.",
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Attribute",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "entity",
+          "attribute"
+        ],
+        "title": "_AttributeRef",
+        "type": "object"
+      },
+      "_ColumnSource": {
+        "additionalProperties": false,
+        "properties": {
+          "column": {
+            "description": "A table id, a dot, then the exact column name: t1.order_no.",
+            "maxLength": 420,
+            "pattern": "^t[1-9][0-9]{0,5}\\.\\S",
+            "title": "Column",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Short reason, only when the value is not a straight copy: a filter, lookup, derivation or combination of sources.",
+            "title": "Note"
+          }
+        },
+        "required": [
+          "column"
+        ],
+        "title": "_ColumnSource",
+        "type": "object"
+      },
+      "_CompactAttribute": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Business name, following naming_instructions.",
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Databricks SQL type. Required for a new Attribute; omit to keep a saved one.",
+            "title": "Type"
+          },
+          "nullable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Required for a new Attribute that is not a natural key; omit to keep a saved value. Natural keys are never nullable.",
+            "title": "Nullable"
+          },
+          "natural_key": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "True for every part of the business key. Omitted: false, or the saved value.",
+            "title": "Natural Key"
+          },
+          "from": {
+            "anyOf": [
+              {
+                "description": "A table id, a dot, then the exact column name: t1.order_no.",
+                "maxLength": 420,
+                "pattern": "^t[1-9][0-9]{0,5}\\.\\S",
+                "type": "string"
+              },
+              {
+                "$ref": "#/$defs/_ColumnSource"
+              },
+              {
+                "$ref": "#/$defs/_ContextSource"
+              },
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "description": "A table id, a dot, then the exact column name: t1.order_no.",
+                      "maxLength": 420,
+                      "pattern": "^t[1-9][0-9]{0,5}\\.\\S",
+                      "type": "string"
+                    },
+                    {
+                      "$ref": "#/$defs/_ColumnSource"
+                    },
+                    {
+                      "$ref": "#/$defs/_ContextSource"
+                    }
+                  ]
+                },
+                "maxItems": 100,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Source column(s) or Context record. Omit only for a derived value whose rule the definition states.",
+            "title": "From"
+          },
+          "definition": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Omit to use the single source column's Project description. Required when there is no single source column or it has no description.",
+            "title": "Definition"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Short reason, only when the value is not a straight copy: a filter, lookup, derivation or combination of sources.",
+            "title": "Note"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "_CompactAttribute",
+        "type": "object"
+      },
+      "_CompactEntity": {
+        "additionalProperties": false,
+        "properties": {
+          "schema": {
+            "description": "One schema_name from schemas.",
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Schema",
+            "type": "string"
+          },
+          "name": {
+            "description": "Singular Entity name, following naming_instructions.",
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "core",
+                  "transaction",
+                  "transaction_line",
+                  "reference",
+                  "association",
+                  "event",
+                  "history",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "A logical_entity_types code. Required for a new Entity; omit to keep a saved one."
+          },
+          "definition": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "What one row is, then what it means. Required for a new Entity.",
+            "title": "Definition"
+          },
+          "grain": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "One row per ...: the complete business identity. Required for a new Entity.",
+            "title": "Grain"
+          },
+          "sources": {
+            "default": [],
+            "description": "Tables or Context records this Entity is built from; saved ones are kept.",
+            "items": {
+              "anyOf": [
+                {
+                  "description": "A table id from table_index, such as t1.",
+                  "pattern": "^t[1-9][0-9]{0,5}$",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/_TableSource"
+                },
+                {
+                  "$ref": "#/$defs/_ContextSource"
+                }
+              ]
+            },
+            "maxItems": 1000,
+            "title": "Sources",
+            "type": "array"
+          },
+          "attributes": {
+            "default": [],
+            "description": "Business Attributes in column order. List only new or changed ones; saved ones are kept. Never list the generated <Entity>ID key or audit columns.",
+            "items": {
+              "$ref": "#/$defs/_CompactAttribute"
+            },
+            "maxItems": 20000,
+            "title": "Attributes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "schema",
+          "name"
+        ],
+        "title": "_CompactEntity",
+        "type": "object"
+      },
+      "_CompactRelationship": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "$ref": "#/$defs/_AttributeRef",
+            "description": "The child Entity and its foreign-key Attribute."
+          },
+          "to": {
+            "$ref": "#/$defs/_EntityRef",
+            "description": "The parent Entity; the backend references its key."
+          },
+          "cardinality": {
+            "description": "many_to_one, or one_to_one only when business meaning makes the foreign key unique.",
+            "enum": [
+              "many_to_one",
+              "one_to_one"
+            ],
+            "title": "Cardinality",
+            "type": "string"
+          },
+          "basis": {
+            "description": "Why the link and its cardinality hold, citing Analysis or Context.",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Basis",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "cardinality",
+          "basis"
+        ],
+        "title": "_CompactRelationship",
+        "type": "object"
+      },
+      "_ContextSource": {
+        "additionalProperties": false,
+        "properties": {
+          "context": {
+            "description": "A context_record_id from context_records.",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "title": "Context",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Short reason, only when the value is not a straight copy: a filter, lookup, derivation or combination of sources.",
+            "title": "Note"
+          }
+        },
+        "required": [
+          "context"
+        ],
+        "title": "_ContextSource",
+        "type": "object"
+      },
+      "_EntityRef": {
+        "additionalProperties": false,
+        "properties": {
+          "schema": {
+            "description": "The Entity's schema.",
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Schema",
+            "type": "string"
+          },
+          "entity": {
+            "description": "The Entity's name.",
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Entity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "entity"
+        ],
+        "title": "_EntityRef",
+        "type": "object"
+      },
+      "_Retirement": {
+        "additionalProperties": false,
+        "properties": {
+          "schema": {
+            "description": "Schema of the saved Entity.",
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Schema",
+            "type": "string"
+          },
+          "entity": {
+            "description": "The saved Entity, retired alone when nothing else is set.",
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Entity",
+            "type": "string"
+          },
+          "attribute": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "A saved Attribute of the Entity, retired with its links.",
+            "title": "Attribute"
+          },
+          "to": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/_EntityRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "With attribute: retire the Relationship from that Attribute to this parent."
+          },
+          "source": {
+            "anyOf": [
+              {
+                "maxLength": 420,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Retire one source: a table id (t1) of the Entity, a column (t1.code) of the Attribute, or a context_record_id.",
+            "title": "Source"
+          }
+        },
+        "required": [
+          "schema",
+          "entity"
+        ],
+        "title": "_Retirement",
+        "type": "object"
+      },
+      "_TableSource": {
+        "additionalProperties": false,
+        "properties": {
+          "table": {
+            "description": "A table id from table_index, such as t1.",
+            "pattern": "^t[1-9][0-9]{0,5}$",
+            "title": "Table",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Short reason, only when the value is not a straight copy: a filter, lookup, derivation or combination of sources.",
+            "title": "Note"
+          }
+        },
+        "required": [
+          "table"
+        ],
+        "title": "_TableSource",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "entities": {
+        "description": "New Entities, and saved Entities to change: identity plus changed fields.",
+        "items": {
+          "$ref": "#/$defs/_CompactEntity"
+        },
+        "maxItems": 20000,
+        "title": "Entities",
+        "type": "array"
+      },
+      "relationships": {
+        "description": "New or changed Relationships, each from a child foreign key to a parent.",
+        "items": {
+          "$ref": "#/$defs/_CompactRelationship"
+        },
+        "maxItems": 20000,
+        "title": "Relationships",
+        "type": "array"
+      },
+      "retire": {
+        "description": "Saved records to mark inactive. Nothing is deleted. Retiring an Entity also retires its Attributes and Relationships; retiring an Attribute retires its Relationships.",
+        "items": {
+          "$ref": "#/$defs/_Retirement"
+        },
+        "maxItems": 20000,
+        "title": "Retire",
+        "type": "array"
+      }
+    },
+    "required": [
+      "entities",
+      "relationships",
+      "retire"
+    ],
+    "title": "_CompactLogicalCandidate",
+    "type": "object",
+    "description": "Return only new or changed Logical records in the three arrays; omitted saved records stay as they are. Cite tables by table_index id (t1) and columns as t1.column. For a saved Entity or Attribute, send its identity plus only the fields you change. The backend adds each new Entity's <Entity>ID key, audit columns, column and dependency order, locks and the parent key of each Relationship, and copies a missing Attribute definition from its single source column's Project description. Relationships point from the child's foreign-key Attribute to the parent Entity. Retire saved records in retire; nothing is deleted. Coverage target is 70% of distinct selected Objects, rounded up, through active Entity sources, including unchanged saved records. On repair, fix every context.repair.validation_issues entry and return the complete corrected answer, not a patch."
+  },
+  "expect": {
+    "list": "entities",
+    "key": [
+      "name",
+      "type"
+    ],
+    "expected": [
+      {
+        "name": "DispatchMethod",
+        "type": "reference"
+      },
+      {
+        "name": "ReturnReason",
+        "type": "reference"
+      }
+    ],
+    "forbidden": [
+      {
+        "name": "ReferenceCatalog",
+        "type": "reference"
+      }
+    ]
+  }
+}

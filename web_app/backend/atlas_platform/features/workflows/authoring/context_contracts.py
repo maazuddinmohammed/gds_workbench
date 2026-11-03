@@ -910,6 +910,12 @@ INPUT_SHAPES: dict[str, Any] = {
                     "type": "object",
                     "properties": {
                         "table": {"type": "string", "pattern": "^t[1-9][0-9]*$"},
+                        "batch_attribute_name": {
+                            "type": ["string", "null"],
+                            "minLength": 1,
+                            "description": "Logical modeling: the registered load batch column "
+                            "for this Object, null when none is registered.",
+                        },
                         "tenant_code": {"type": "string", "minLength": 1},
                         "system_code": {"type": "string", "minLength": 1},
                         "connection_code": {"type": "string", "minLength": 1},

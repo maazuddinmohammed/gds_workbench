@@ -19,6 +19,7 @@ from atlas_platform.features.workflows.authoring.context_contracts import (
 )
 from atlas_platform.features.workflows.authoring.context_inputs import (
     _logical_optimize_inputs,
+    project_context_inputs,
 )
 from atlas_platform.features.workflows.authoring.prompt_inputs import (
     list_prompt_input_contracts,
@@ -51,6 +52,15 @@ def _call_bundle(mode: str, operation: Literal["build", "optimize"]) -> AgentCon
     )
     assert focused is not None
     return focused
+
+
+def test_batch_registration_distinguishes_unregistered_from_older_frozen_inputs() -> None:
+    context = _call_bundle("one_shot", "build").context.model_dump(mode="json")
+    obj = context["selected_objects"][0]["object"]
+    obj["batch_attribute_name"] = None
+    assert project_context_inputs(context)["table_index"][0]["batch_attribute_name"] is None
+    del obj["batch_attribute_name"]
+    assert "batch_attribute_name" not in project_context_inputs(context)["table_index"][0]
 
 
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
@@ -100,6 +110,7 @@ def test_stage_inputs_match_actual_context_and_documented_contracts(
     assert values[prefix + "table_index"] == [
         {
             "table": "t1",
+            "batch_attribute_name": "batch_id",
             "tenant_code": "NWA",
             "system_code": "CRM",
             "connection_code": "SOURCE",

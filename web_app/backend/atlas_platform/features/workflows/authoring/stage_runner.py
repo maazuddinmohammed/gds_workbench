@@ -99,6 +99,8 @@ class AgentStageRunner:
                 resolver_values=resolver_values,
                 tool_definitions=local_tool_catalog.definitions if local_tool_catalog else (),
                 precomputed_values=getattr(local_tool_catalog, "prompt_values", None),
+                only_referenced=(stage.prompt_workflow or plan.project_workflow)
+                in {"mapping", "code_generation", "validation"},
             ),
         )
         workflow = (

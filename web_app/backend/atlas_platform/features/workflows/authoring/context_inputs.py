@@ -171,10 +171,14 @@ def project_context_inputs(
             values[f"{family}_{plural}"] = None if section is None else deepcopy(section[plural])
     if workflow in {"logical", "subject_area"}:
         # Answers cite selected Objects by these short ids; the backend numbers them the same way.
-        values["table_index"] = [
-            {"table": f"t{position}", **{name: selected["object"][name] for name in OBJECT_FIELDS}}
-            for position, selected in enumerate(context["selected_objects"], start=1)
-        ]
+        table_index: list[dict[str, Any]] = []
+        for position, selected in enumerate(context["selected_objects"], start=1):
+            obj = selected["object"]
+            entry = {"table": f"t{position}", **{name: obj[name] for name in OBJECT_FIELDS}}
+            if workflow == "logical" and "batch_attribute_name" in obj:
+                entry["batch_attribute_name"] = obj["batch_attribute_name"]
+            table_index.append(entry)
+        values["table_index"] = table_index
     if workflow == "subject_area":
         values.update(_subject_area_inputs(context))
     if workflow == "logical":

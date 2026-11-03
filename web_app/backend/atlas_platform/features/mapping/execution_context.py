@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+import re
+from collections.abc import Iterator, Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
+from functools import lru_cache
 from hashlib import sha256
 from typing import Any, cast
 
 from atlas_mcp.application.mapping_context import without_internal_fields
+from atlas_mcp.domain.snapshots.project import ProjectSnapshot
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from atlas_platform.features.context.context import (
@@ -31,6 +34,7 @@ from atlas_platform.features.workflows.authoring.context_inputs import (
 from atlas_platform.features.workflows.authoring.downstream_inputs import (
     DownstreamContextReaders,
     build_downstream_readers,
+    compact_mapping_basis,
     project_downstream_inputs,
 )
 from atlas_platform.features.workflows.authoring.plan import (
@@ -43,8 +47,9 @@ from atlas_platform.features.workflows.authoring.repair import (
 from atlas_platform.features.workflows.authoring.tool_configuration import (
     registered_tool_definitions,
 )
+from atlas_platform.prompt_rendering import referenced_prompt_names
 
-from .preparation_contracts import MappingModeledEntity, MappingPreparation
+from .preparation_contracts import MappingModeledEntity, MappingPreparation, MappingSource
 
 # Dimensional links store only their endpoints (child -> parent). Their kind comes from
 # the two Entity types; anything else is a plain reference.
@@ -266,13 +271,39 @@ def build_mapping_execution_context(
     """Prepare author-selected natural-key values and optional frozen readers."""
 
     selected_limits = limits or load_default_mapping_execution_context_limits()
-    raw = cast(dict[str, JsonValue], _mapping_provider_context(preparation))
-    values = project_downstream_inputs("mapping", raw)
+    stage = preparation.plan.agent_plan.stages[0]
+    referenced = referenced_prompt_names(stage.templates)
+    only_pair_inputs = (
+        execution_mode == "one_shot"
+        and selected_limits.max_tool_catalog_bytes is None
+        and "mapping_basis" in referenced
+        and referenced
+        <= {
+            "mapping_basis",
+            "mapping_route",
+            "source_system",
+            "authoring_policy",
+            "object_output_template",
+            "attribute_output_template",
+        }
+    )
+    # When the frozen template requests only the pair, the full legacy catalog
+    # isn't read. In particular, don't materialize all peer Mapping documents.
+    raw = cast(
+        dict[str, JsonValue],
+        _mapping_provider_context(preparation, include_upstream=not only_pair_inputs),
+    )
+    # Only the original frozen evidence counts towards the catalog size. The
+    # compact projection is derived when its template or reader requests it.
+    values = project_downstream_inputs("mapping", raw, include_mapping_basis=False)
     if (
         selected_limits.max_tool_catalog_bytes is not None
         and _json_size(cast(JsonValue, values)) > selected_limits.max_tool_catalog_bytes
     ):
         raise AgentContextTooLargeError()
+    pair = _MappingPairBasis(preparation, values)
+    if pair.deferred or only_pair_inputs:
+        values["mapping_basis"] = pair.cards(pair.focus or set(pair.sources))
     embedded = cast(JsonValue, {"__gds_downstream_inputs__": "mapping", "values": values})
     if execution_mode == "tool_assisted":
         catalog = build_downstream_readers(
@@ -284,6 +315,23 @@ def build_mapping_execution_context(
             max_page_records=selected_limits.max_tool_page_records,
             max_cumulative_result_bytes=selected_limits.max_tool_transcript_bytes,
         )
+        if pair.deferred:
+            # Cursors can request the same selection over many pages. Cache only the last
+            # selection so arbitrary combinations cannot grow the retained result set.
+            catalog.mapping_pair_pages = lru_cache(maxsize=1)(pair.read)
+            # The embedded resolver values are public to the caller. Keep them detached
+            # from the frozen rows used to service later source-detail reads.
+            embedded = cast(
+                JsonValue,
+                {
+                    "__gds_downstream_inputs__": "mapping",
+                    "values": catalog.prompt_values,
+                },
+            )
+            pair.values = {
+                key: values[key]
+                for key in ("target_metadata", "existing_mapping", "readiness", "mapping_basis")
+            }
         return MappingExecutionContext(
             embedded_context=embedded,
             tool_catalog=catalog,
@@ -293,7 +341,290 @@ def build_mapping_execution_context(
     )
 
 
-def _mapping_provider_context(preparation: MappingPreparation) -> JsonValue:
+class _MappingPairBasis:
+    """Separate eligible sources from evidence needed to author this frozen pair."""
+
+    def __init__(self, preparation: MappingPreparation, values: dict[str, Any]) -> None:
+        self.preparation = preparation
+        self.values = values
+        priority = {"support": 0, "lookup": 1, "candidate": 2}
+        ordered = sorted(
+            zip(preparation.context.sources, values["source_evidence"], strict=True),
+            key=lambda pair: priority[pair[0].role],
+        )
+        self.sources = {f"s{i}": pair for i, pair in enumerate(ordered, 1)}
+        self.focus = {ref for ref, (source, _) in self.sources.items() if source.role == "support"}
+        self.deferred: set[str] = set()
+        self.join_summaries: list[dict[str, Any]] = []
+        self.join_details: dict[str, list[dict[str, Any]]] = {}
+        if len(self.focus) == len(self.sources):
+            return
+
+        support = values["mapping_support"]
+        target = preparation.context.target
+        layer = preparation.plan.modeled_entity_type.removesuffix("_entity")
+        # Stored custom Mapping documents and scoped Context may refer to another
+        # eligible source by name, even when its role in the catalog is "candidate".
+        header = values["existing_mapping"][0]
+        mentions: list[Any] = [
+            target.entity_definition,
+            target.grain,
+            *(a.attribute_definition for a in target.attributes),
+            *(s.rationale for s, _ in self.sources.values() if s.role == "support"),
+            header["transformation_document"],
+            *(attr["transformation_document"] for attr in header["attribute_mappings"]),
+        ]
+        physical: set[tuple[Any, ...]] = set()
+        modeled: set[tuple[str, str, str]] = set()
+        for attr in support["attribute_lineage"]:
+            for source_link in attr["sources"]:
+                if source_link.get("rationale"):
+                    mentions.append(source_link["rationale"])
+                if source_link["support_source_type"] == "attribute":
+                    physical.add(natural_key(source_link["source_attribute"]))
+                elif source_link["support_source_type"] == "logical_attribute":
+                    key = source_link["source_logical_attribute"]
+                    modeled.add(
+                        (
+                            "logical_entity",
+                            key["logical_entity_schema_name"].casefold(),
+                            key["logical_entity_name"].casefold(),
+                        )
+                    )
+        for rel in support["modeled_relationships"]:
+            if (
+                rel[f"from_{layer}_entity_name"].casefold() == target.entity_name.casefold()
+                and rel[f"from_{layer}_entity_schema_name"].casefold()
+                == target.entity_schema_name.casefold()
+            ):
+                modeled.add(
+                    (
+                        target.entity_type,
+                        rel[f"to_{layer}_entity_schema_name"].casefold(),
+                        rel[f"to_{layer}_entity_name"].casefold(),
+                    )
+                )
+                mentions.append(rel.get(f"{layer}_relationship_basis"))
+        # The related dimension can use another Silver input to populate the key
+        # this target looks up. Only consider already eligible Silver sources.
+        if layer == "dimensional" and preparation.snapshot is not None:
+            for entity in preparation.snapshot.dimensional.entities:
+                if (
+                    entity.dimensional_entity_is_active
+                    and (
+                        "dimensional_entity",
+                        entity.dimensional_entity_schema_name.casefold(),
+                        entity.dimensional_entity_name.casefold(),
+                    )
+                    in modeled
+                ):
+                    for link in entity.sources:
+                        if link.is_active and link.support_source_type == "logical_entity":
+                            key = link.source_logical_entity
+                            modeled.add(
+                                (
+                                    "logical_entity",
+                                    key.logical_entity_schema_name.casefold(),
+                                    key.logical_entity_name.casefold(),
+                                )
+                            )
+        for ref, (source, row) in self.sources.items():
+            obj = source.object
+            if isinstance(obj, MappingModeledEntity):
+                if (
+                    obj.entity_type,
+                    obj.entity_schema_name.casefold(),
+                    obj.entity_name.casefold(),
+                ) in modeled:
+                    self.focus.add(ref)
+            elif natural_key(row["object"]) in physical:
+                self.focus.add(ref)
+        # Include routed and cited Context for the target and its structural sources.
+        # Context cited solely by a different eligible peer stays with that peer.
+        mentions.extend(_mapping_support(self.scoped(self.focus))["context_records"])
+        text = json.dumps(mentions, ensure_ascii=False).casefold().replace("`", "")
+        for ref, (source, _) in self.sources.items():
+            if ref in self.focus:
+                continue
+            obj = source.object
+            if isinstance(obj, MappingModeledEntity):
+                name, schema = obj.entity_name, obj.entity_schema_name
+            else:
+                name, schema = obj.object_name, obj.object_schema
+            # Qualified SQL resolves the schema. An unqualified or opaque name keeps
+            # every eligible namesake as a competing source; never choose by order.
+            name_token = re.escape(name.casefold())
+            schema_token = re.escape(schema.casefold())
+            pattern = rf"(?:(?<![\w.]){name_token}|(?<!\w){schema_token}\.{name_token})(?!\w)"
+            if re.search(pattern, text):
+                self.focus.add(ref)
+        if not any(self.sources[ref][0].role != "lookup" for ref in self.focus):
+            # A lookup alone cannot establish the driver. Retain every possible
+            # driver for discovery when direct lineage does not identify one.
+            self.focus.update(
+                ref for ref, (source, _) in self.sources.items() if source.role != "lookup"
+            )
+        if self.focus:
+            self.deferred = self.sources.keys() - self.focus
+        if not self.deferred:
+            return
+
+        # Keep the join when just one endpoint is in focus. One-hop adjacency is
+        # evidence about two columns, not a reason to import another whole table.
+        physical_refs = {
+            natural_key(row["object"]): ref
+            for ref, (source, row) in self.sources.items()
+            if not isinstance(source.object, MappingModeledEntity)
+        }
+        for row in support["source_relationships"]:
+            first, second = (
+                physical_refs[natural_key({k: row[f"{side}_{k}"] for k in OBJECT_FIELDS})]
+                for side in ("from", "to")
+            )
+            if (first in self.focus) == (second in self.focus):
+                continue
+            summary = {
+                "from_source_ref": first,
+                "to_source_ref": second,
+                **{
+                    k: row[k]
+                    for k in (
+                        "from_attribute_name",
+                        "to_attribute_name",
+                        "relationship_kind",
+                        "inferred_cardinality",
+                        "validation_result",
+                        "validation_source_missing_target_count",
+                        "validation_duplicate_target_key_count",
+                    )
+                },
+            }
+            self.join_summaries.append({"kind": "analysis_relationship", "record": summary})
+            deferred = first if first in self.deferred else second
+            self.join_details.setdefault(deferred, []).append(
+                {"kind": "analysis_relationship", "record": row}
+            )
+        logical_refs = {
+            (obj.entity_schema_name.casefold(), obj.entity_name.casefold()): ref
+            for ref, (source, _) in self.sources.items()
+            if isinstance(obj := source.object, MappingModeledEntity)
+            and obj.entity_type == "logical_entity"
+        }
+        snapshot = preparation.snapshot
+        if logical_refs and snapshot is not None:
+            attributes = {
+                (
+                    a.logical_entity_schema_name.casefold(),
+                    a.logical_entity_name.casefold(),
+                    a.logical_attribute_name.casefold(),
+                )
+                for a in snapshot.logical.attributes
+                if a.logical_attribute_is_active
+                and (a.logical_entity_schema_name.casefold(), a.logical_entity_name.casefold())
+                in logical_refs
+            }
+            for child, parent, row in _eligible_logical_relationships(snapshot, attributes):
+                first, second = logical_refs[child[:2]], logical_refs[parent[:2]]
+                if (first in self.focus) == (second in self.focus):
+                    continue
+                card = {"kind": "source_logical_relationship", "record": row}
+                self.join_summaries.append(card)
+                deferred = first if first in self.deferred else second
+                self.join_details.setdefault(deferred, []).append(card)
+
+    def scoped(self, refs: set[str]) -> MappingPreparation:
+        sources: tuple[MappingSource, ...] = tuple(
+            source for ref, (source, _) in self.sources.items() if ref in refs
+        )
+        context = self.preparation.context.model_copy(update={"sources": sources})
+        return self.preparation.model_copy(update={"context": context})
+
+    def cards(self, refs: set[str]) -> list[dict[str, Any]]:
+        scoped = self.scoped(refs)
+        ordered = [ref for ref in self.sources if ref in refs]
+        support = _mapping_support(scoped)
+        cards = compact_mapping_basis(
+            {
+                **self.values,
+                "source_evidence": [self.sources[ref][1] for ref in ordered],
+                "mapping_support_records": _mapping_support_records(scoped, support),
+            },
+            source_refs=ordered,
+        )
+        if refs == self.focus:
+            cards.extend(self.source_directory(set(self.join_details)))
+            cards.extend(self.join_summaries)
+        reject_forbidden_provider_json(
+            cast(JsonValue, cards), allow_identity_keys=True, reject_sensitive_values=True
+        )
+        return cards
+
+    def read(self, selection: tuple[str, ...]) -> list[dict[str, Any]]:
+        if selection:
+            refs = set(selection)
+            if not refs <= self.deferred:
+                raise KeyError("unknown source reference")
+            # Include this selection's upstream Mapping, lineage and profiles.
+            # Target/field/role instructions were already supplied on the core pages.
+            details = [
+                card
+                for card in self.cards(refs)
+                if card["kind"] not in {"target", "field", "target_relationship"}
+            ]
+            for ref in dict.fromkeys(selection):
+                details.extend(self.join_details.get(ref, ()))
+            return details
+        return [
+            *self.values["mapping_basis"],
+            *self.source_directory(self.deferred - self.join_details.keys()),
+        ]
+
+    def source_directory(self, refs: set[str]) -> list[dict[str, Any]]:
+        cards: list[dict[str, Any]] = []
+        for ref, (source, row) in self.sources.items():
+            if ref not in refs:
+                continue
+            obj = row["object"]
+            identity = (
+                ("entity_type", "entity_schema_name", "entity_name")
+                if isinstance(source.object, MappingModeledEntity)
+                else OBJECT_FIELDS
+            )
+            cards.append(
+                {
+                    "kind": "source",
+                    "record": {
+                        **{key: obj[key] for key in identity},
+                        "ref": ref,
+                        "role": source.role,
+                        "deferred": True,
+                    },
+                }
+            )
+        return cards
+
+
+def _eligible_logical_relationships(
+    snapshot: ProjectSnapshot, attributes: set[tuple[str, str, str]]
+) -> Iterator[tuple[tuple[str, str, str], tuple[str, str, str], dict[str, Any]]]:
+    for rel in snapshot.logical.relationships:
+        first = (
+            rel.from_logical_entity_schema_name.casefold(),
+            rel.from_logical_entity_name.casefold(),
+            rel.from_logical_attribute_name.casefold(),
+        )
+        second = (
+            rel.to_logical_entity_schema_name.casefold(),
+            rel.to_logical_entity_name.casefold(),
+            rel.to_logical_attribute_name.casefold(),
+        )
+        if rel.logical_relationship_is_active and first in attributes and second in attributes:
+            yield first, second, rel.model_dump(mode="json")
+
+
+def _mapping_provider_context(
+    preparation: MappingPreparation, *, include_upstream: bool = True
+) -> JsonValue:
     plan = preparation.plan
     context = preparation.context
     support = _mapping_support(preparation)
@@ -318,7 +649,9 @@ def _mapping_provider_context(preparation: MappingPreparation) -> JsonValue:
             },
             "source_system": context.source_system.model_dump(mode="json"),
             "mapping_support": support,
-            "mapping_support_records": _mapping_support_records(preparation, support),
+            "mapping_support_records": (
+                _mapping_support_records(preparation, support) if include_upstream else []
+            ),
             "target_dependency_graph": (context.target_dependency_graph.model_dump(mode="json")),
             "target": context.target.model_dump(mode="json"),
             "sources": [item.model_dump(mode="json") for item in context.sources],
@@ -616,18 +949,8 @@ def _mapping_support_records(
                 continue
             cast(list[dict[str, Any]], row["sources"]).append(source.model_dump(mode="json"))
         records.append({"evidence_type": "source_logical_attribute", "record": row})
-    for relationship in snapshot.logical.relationships:
-        row = relationship.model_dump(mode="json")
-        if relationship.logical_relationship_is_active and all(
-            (
-                row[f"{side}_logical_entity_schema_name"].casefold(),
-                row[f"{side}_logical_entity_name"].casefold(),
-                row[f"{side}_logical_attribute_name"].casefold(),
-            )
-            in selected_attributes
-            for side in ("from", "to")
-        ):
-            records.append({"evidence_type": "source_logical_relationship", "record": row})
+    for _, _, row in _eligible_logical_relationships(snapshot, selected_attributes):
+        records.append({"evidence_type": "source_logical_relationship", "record": row})
     system_code = preparation.context.source_system.system_code.casefold()
     template_codes: set[str] = set()
     for kind, mappings in (

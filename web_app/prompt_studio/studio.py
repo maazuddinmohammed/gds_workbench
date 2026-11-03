@@ -35,6 +35,9 @@ sys.path[:0] = [str(ROOT / "web_app" / "backend"), str(ROOT / "mcp_server")]
 from atlas_platform.features.workflows.authoring.agent_execution import (  # noqa: E402
     AGENT_OUTPUT_CONTRACT_INSTRUCTION,
 )
+from atlas_platform.features.workflows.authoring.downstream_inputs import (  # noqa: E402
+    compact_mapping_basis,
+)
 from atlas_platform.features.workflows.authoring.prompt_inputs import (  # noqa: E402
     get_prompt_input_contract,
 )
@@ -392,6 +395,20 @@ def known_output_schema(stage: str) -> dict[str, Any] | None:
     return None
 
 
+def read_fixture(path: Path) -> dict[str, Any]:
+    fixture = json.loads(path.read_text(encoding="utf-8"))
+    values = fixture.get("values", {})
+    # Keep a single source of evidence for A/B runs comparing the old and compact prompts.
+    if path.parent.name == "mapping.one_shot.mapping_authoring" and "mapping_basis" not in values:
+        legacy_inputs = {
+            "target_metadata", "existing_mapping", "readiness", "source_evidence",
+            "mapping_support_records",
+        }
+        if legacy_inputs <= values.keys():
+            values["mapping_basis"] = compact_mapping_basis(values)
+    return fixture
+
+
 def fixture_problems(fixture: dict[str, Any], variables: list[dict[str, Any]]) -> list[str]:
     problems = []
     names = {variable["name"] for variable in variables}
@@ -579,7 +596,7 @@ def cmd_build() -> None:
         seed = seed_by_id[stage]
         fixtures = []
         for path in sorted((FIXTURES / stage).glob("*.json")):
-            fixture = json.loads(path.read_text(encoding="utf-8"))
+            fixture = read_fixture(path)
             fixtures.append(
                 {
                     "name": path.stem,
@@ -642,9 +659,13 @@ def cmd_fixture(stage: str, name: str) -> None:
     if path.exists():
         raise SystemExit(f"{path.relative_to(ROOT)} already exists.")
     variables = read_variables().get(stage, [])
+    values = {variable["name"]: variable["example"] for variable in variables}
+    if stage == "mapping.one_shot.mapping_authoring":
+        # Derive the compact view from the editable evidence when build/pack reads it.
+        values.pop("mapping_basis")
     fixture = {
         "description": "One sentence: what situation this made-up input tests.",
-        "values": {variable["name"]: variable["example"] for variable in variables},
+        "values": values,
         "output_schema": known_output_schema(stage) or {},
         "expect": {"list": "", "key": [], "expected": [], "forbidden": []},
     }
@@ -661,7 +682,7 @@ def cmd_pack(stage: str, fixture_name: str, runs: int, label: str) -> None:
     if seed_item["workflow_execution_mode"] != TESTABLE_MODE:
         raise SystemExit("Only one_shot stages can be tested: tool stages need live tool results.")
     fixture_path = FIXTURES / stage / f"{fixture_name}.json"
-    fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+    fixture = read_fixture(fixture_path)
     variables = read_variables().get(stage, [])
     problems = fixture_problems(fixture, variables)
     if problems:

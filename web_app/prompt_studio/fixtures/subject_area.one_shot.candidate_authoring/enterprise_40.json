@@ -1328,7 +1328,7 @@
         "additionalProperties": false,
         "properties": {
           "name": {
-            "description": "Business domain name, such as Sales or Human Resources.",
+            "description": "Name of a business subject or process, such as Policy or Claims.",
             "maxLength": 255,
             "minLength": 1,
             "pattern": "\\S",
@@ -1382,7 +1382,7 @@
         "type": "array"
       },
       "unassigned": {
-        "description": "Tables with no business data, such as technical, staging or log tables. Every table is in an area or here.",
+        "description": "Technical tables only: staging, log, audit or control tables, even when they hold business rows. Every table is in an area or here.",
         "items": {
           "description": "A table id from table_index, such as t1.",
           "pattern": "^t[1-9][0-9]{0,5}$",
@@ -1412,7 +1412,7 @@
     ],
     "title": "_SubjectAreaAnswer",
     "type": "object",
-    "description": "Group every table in table_index into Subject Areas: broad business domains, each designed by one Logical Build call. Cite tables by table_index id. Return new areas and saved areas you change; a listed area's tables replace its saved unlocked tables from table_index, and its other tables stay. Put each remaining table in unassigned. Retire saved areas by name; nothing is deleted. On repair, fix every context.repair.validation_issues entry and return the complete corrected answer, not a patch."
+    "description": "Group the business tables in table_index by subject or process. Each Subject Area supplies one Logical Build call. Cite tables by table_index id. Return new areas and saved areas you change; a listed area's tables replace its saved unlocked tables from table_index, and its other tables stay. Put each remaining technical table in unassigned. Retire saved areas by name; nothing is deleted. On repair, fix every context.repair.validation_issues entry and return the complete corrected answer, not a patch."
   },
   "expect": {
     "list": "areas",

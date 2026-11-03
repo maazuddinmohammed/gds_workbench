@@ -68,12 +68,14 @@ type AgentToolName = Literal[
     "get_existing_mapping",
     "get_mapping_support",
     "get_mapping_support_records",
+    "get_mapping_basis",
     "get_code_target",
     "get_code_sources",
     "get_code_source_systems",
     "get_object_transformations",
     "get_attribute_transformations",
     "get_mapping_evidence",
+    "get_validation_basis",
     "get_current_code",
     "get_applied_groups",
     "get_applied_checks",
@@ -283,8 +285,8 @@ class AgentExecutionFailedError(AtlasError):
         messages: dict[AgentFailureReason, str] = {
             "execution_failed": "The selected agent could not complete this stage.",
             "context_exhausted": (
-                "The selected model's context window is full. Reduce the selected scope "
-                "or choose a model with a larger context window."
+                "This model call exceeded its context window. The prompt, tool results and "
+                "any repair feedback share that window. Review the evidence for the failing stage."
             ),
             "output_truncated": (
                 "The selected model stopped at its output limit. "

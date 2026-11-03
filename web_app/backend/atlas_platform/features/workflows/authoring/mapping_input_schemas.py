@@ -24,6 +24,21 @@ from atlas_platform.features.mapping.preparation_contracts import (
     MappingSourceSystem,
 )
 
+MAPPING_EVIDENCE_KINDS = [
+    "target_relationship",
+    "analysis_relationship",
+    "profile",
+    "context_record",
+    "source_logical_entity",
+    "source_logical_attribute",
+    "source_logical_relationship",
+    "source_object_mapping",
+    "source_attribute_mapping",
+    "source_mapping_template",
+    "physical_object",
+    "physical_attribute",
+]
+
 
 def _project_schema(value: Any) -> Any:
     """Remove metadata properties, retaining opaque document schemas intact."""
@@ -99,21 +114,7 @@ def mapping_input_schemas() -> dict[str, dict[str, Any]]:
             "additionalProperties": False,
             "properties": {
                 "evidence_type": {
-                    "enum": [
-                        "target_attribute_lineage",
-                        "target_relationship",
-                        "analysis_relationship",
-                        "profile",
-                        "context_record",
-                        "source_logical_entity",
-                        "source_logical_attribute",
-                        "source_logical_relationship",
-                        "source_object_mapping",
-                        "source_attribute_mapping",
-                        "source_mapping_template",
-                        "physical_object",
-                        "physical_attribute",
-                    ]
+                    "enum": ["target_attribute_lineage", *MAPPING_EVIDENCE_KINDS],
                 },
                 "record": {"type": "object"},
             },

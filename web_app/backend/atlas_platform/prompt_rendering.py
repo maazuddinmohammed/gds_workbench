@@ -151,6 +151,31 @@ class _DataEnvironment(ImmutableSandboxedEnvironment):
         return False
 
 
+def _prompt_environment() -> _DataEnvironment:
+    env = _DataEnvironment(undefined=StrictUndefined, autoescape=False, finalize=_finalize)
+    env.globals.clear()
+    env.filters = {key: val for key, val in env.filters.items() if key in _ALLOWED_FILTERS}
+    env.tests = {key: val for key, val in env.tests.items() if key in _ALLOWED_TESTS}
+    # tojson emits compact JSON data, not HTML-escaped text; finalization must not quote it again.
+    env.filters.update(tojson=_finalize)
+    return env
+
+
+def referenced_prompt_names(templates: PromptComponentTemplates) -> set[str]:
+    """Find named inputs using the same restricted Jinja environment as rendering."""
+    env = _prompt_environment()
+    names: set[str] = set()
+    try:
+        for component in (templates.system, templates.instruction, templates.tool_instruction):
+            if component:
+                names.update(meta.find_undeclared_variables(env.parse(component)))
+    except TemplateError, TypeError, ValueError, RecursionError, OverflowError:
+        raise InvalidRequestError(
+            "The Prompt contains invalid syntax, fields, or expressions."
+        ) from None
+    return names
+
+
 def render_prompt(
     *,
     templates: PromptComponentTemplates,
@@ -161,12 +186,7 @@ def render_prompt(
     by_name = {variable.name: variable for variable in variables}
     if len(by_name) != len(variables):
         raise InvalidRequestError("Prompt variable definitions are invalid.")
-    env = _DataEnvironment(undefined=StrictUndefined, autoescape=False, finalize=_finalize)
-    env.globals.clear()
-    env.filters = {key: val for key, val in env.filters.items() if key in _ALLOWED_FILTERS}
-    env.tests = {key: val for key, val in env.tests.items() if key in _ALLOWED_TESTS}
-    # tojson emits compact JSON data, not HTML-escaped text; finalization must not quote it again.
-    env.filters.update(tojson=_finalize)
+    env = _prompt_environment()
     output: list[str | None] = []
     for component in (templates.system, templates.instruction, templates.tool_instruction):
         if component is None:

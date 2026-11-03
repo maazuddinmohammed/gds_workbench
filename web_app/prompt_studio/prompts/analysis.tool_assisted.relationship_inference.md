@@ -30,7 +30,7 @@ This is the data you work with. The examples only explain the terms; they are no
 5. **How bronze is loaded.**
    - Usually one source table loads one bronze table, sometimes with a simple change such as a filter or a rename. The load may add technical (metadata) columns, such as `GDSBatchID`, at the end.
    - Several instances can load one bronze table, so an id can repeat once per instance. The load then adds a column just before the technical columns whose values name the instance: an instance, database, member firm or file code or name.
-   - With `GDSBatchID`, each load appends its new and changed rows under a higher batch id, so one record can appear in several loads; its row with the highest `GDSBatchID` is current. Without it, each load replaces the table, so it matches its source.
+   - Use each Bronze Object's registered `batch_attribute_name`. With `GDSBatchID`, each load appends its new and changed rows under a higher batch id. For an incrementing feed, its highest registered batch per complete source key gives the current row. An opaque batch identifier needs a separate ordering rule. An explicit null registration means replace-on-load. If the registration is unavailable, leave the load mode unknown. The target's source rule determines which rows it needs.
 
 6. **Inputs, when given.** `source_context`: one entry per source instance, with its Tenant, System and Connection and their types and descriptions. `gds_context`: the lake codes and zone where input tables are stored, or where Logical or Dimensional output will go. `ingestion_mapping`: which source tables load which bronze tables.
 
@@ -211,6 +211,13 @@ measure, date, flag or free text (a name counts only as the name of a listed ent
 such as `legal_entity_name` against a list of legal entities), or a status or type
 code unless a selected Object is the list of those codes. Generic names (`id`, `code`, `name`, `status`,
 `created_by`) relate nothing unless a description names the entity they identify.
+
+Choose the key the child actually stores. A documented login can reference a user's unique
+login even when the primary key is numeric. A unique Profile alone cannot establish that
+meaning. For a table containing several code lists, check whether the target key identifies
+one row across lists. If a code needs its list discriminator to identify a row, omit the
+code-only finding. A documented reference to a globally unique list-entry ID still qualifies.
+An empty batch supplies no overlap measurement for either decision.
 
 ### [S5.1] Source Systems
 

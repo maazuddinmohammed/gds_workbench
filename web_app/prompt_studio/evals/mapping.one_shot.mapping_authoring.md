@@ -55,3 +55,40 @@ Review notes:
 - baseline run-06 confusing [S6]: S5 says to account for every author field, but S6 allows omitting an unsupported document or returning it null; it is unclear whether SalesRepID should appear as a null entry or be left out (I left it out and reported it in issues).
 - baseline run-06 comment: The closing output-format paragraph sits at the end of S10 (Dimensional targets) although it applies to every route. The SalesRepID relationship basis in I3.5 cites a Context rule that is not among the supplied records, which S4.3 resolved anyway. A worked Logical example with an append-loaded bronze table (latest row plus instance-aware lookup) would remove most of my doubt.
 
+## 2026-11-03 · `grdm_two_roles_v1` · fixture `dispatch_depot_roles` · 6 runs
+
+| Measure | baseline | candidate |
+|---|---|---|
+| Results returned | 3/3 | 3/3 |
+| Valid answers (schema) | 3/3 | 3/3 |
+| Expected items found | 15/15 (100%) | 15/15 (100%) |
+| Forbidden items returned | 0 | 0 |
+| Other items per valid answer | 0.0 | 0.0 |
+| Clarity (1–5) | 3.7 | 4.3 |
+| Confidence (1–5) | 4.0 | 5.0 |
+| Blockers cited | – | – |
+| Confusing cited | S3.3 ×3, S5 ×3, I1 ×3 | I1 ×3, S4 ×1 |
+
+Suggested verdict: **same**
+
+Review notes:
+- candidate run-01 confusing [I1]: The check says every document has transformation_logic. S4.1 assigns that field only to Attribute documents and defines separate Object fields.
+- candidate run-01 comment: S6 specifies which side of each join needs normalization. S7 and the Mapping Requirement place the batch predicate on dispatch alone.
+- baseline run-02 confusing [S3.3]: The blanket ban on using batch_attribute_name as a value filter conflicts with the explicit Mapping Requirement to bind :dispatch_batch to load_batch and with S7 allowing confirmed batch predicates.
+- baseline run-02 confusing [S5]: Step 3 requires an Object-level missing_transformation_rule issue when no current-row rule is stated, even though the requested batch already yields one row per dispatch number. I included the issue as written.
+- baseline run-02 confusing [I1]: The final check says every document needs transformation_logic, while S4.1 assigns that field only to Attribute documents.
+- baseline run-02 comment: S6 and the applied Depot Mapping specify both the canonical code expression and the System component of each lookup.
+- baseline run-03 confusing [S3.3]: The batch column is described as never a value filter, but the Mapping Requirement explicitly binds :dispatch_batch to dispatch.load_batch and S7 allows confirmed batch predicates.
+- baseline run-03 confusing [S5]: Step 3 mandates an object-level missing_transformation_rule without a current-row rule. The requested batch already yields one row per dispatch, so I reported the issue as directed even though no further row selection is needed.
+- baseline run-03 confusing [I1]: The final check asks for transformation_logic in every document. S4.1 defines that field only for Attribute documents.
+- baseline run-03 comment: S6 and the applied Depot Mapping specify both predicates for each lookup, including normalization of the child code.
+- candidate run-04 confusing [I1]: The final check says every document has transformation_logic. S4.1 defines this field only for Attribute documents.
+- candidate run-04 confusing [S4]: The example leaves filter_criteria null despite a System predicate on a Silver lookup. S7 asks for that restriction in both filter_criteria and sample_query.
+- candidate run-04 comment: The batch binding and both child identifiers are explicit. S6 specifies which side receives Depot's trim and uppercase rule.
+- baseline run-05 confusing [S3.3]: It prohibits using the batch column as a value filter, but the Mapping Requirement explicitly binds the driving batch and S7 permits confirmed batch predicates.
+- baseline run-05 confusing [S5]: Step 3 requires a missing-rule issue without a latest-row rule even though selecting the requested batch already gives one row per dispatch number.
+- baseline run-05 confusing [I1]: The check for transformation_logic in every document also appears to cover the Object document, whose S4.1 template has no such field.
+- baseline run-05 comment: I kept the explicit requested-batch filter and reported the Object-level issue required by S5. The evidence supplies the complete same-System key for each optional Depot lookup.
+- candidate run-06 confusing [I1]: The final check requires transformation_logic in every document, although S4.1 defines that field only for Attribute documents.
+- candidate run-06 comment: S6 identifies which side of each join needs normalization. S7 and the Mapping Requirement specify the batch scope.
+

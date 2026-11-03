@@ -90,11 +90,10 @@ one local draft until reviewed submission. Actual applied downstream prerequisit
 still apply. [Plugin enrichment](../atlas/atlas-plugin/references/project/enrichment.md)
 uses Project Change Sets; physical Metadata correction remains separate.
 
-Only configured variables/readers enter an agent request; do not assume an earlier
-workflow's whole output is implicitly appended. One-shot and tool-assisted modes
-must expose equivalent eligible evidence. Readers paginate frozen context; follow
-all cursors and retain complete records. Oversized/unavailable evidence is an error,
-not an empty result or permission to fabricate details.
+Only evidence rendered into the prompt or returned by a selected reader enters
+the model conversation. Both modes use the same frozen scope. Tool calls add to
+the current conversation, so request only the records a rule needs and finish
+the pages of each selection. Treat failed reads as missing evidence.
 
 Coverage means assessing all selected inputs and required outputs. Unsupported
 relationships, fields, joins, conversions or KPI calculations must remain explicit
@@ -109,10 +108,37 @@ instructions. Exact definitions live in seed 06. Saved inactive/custom template
 definitions still travel with documents that reference them. No template field or
 nested custom value may be dropped by an internal-ID cleanup rule.
 
-Mapping supports partial output. See [current decisions](architecture/decisions.md)
-for omission, lock and failure behavior. `mapping_support_records` provides typed
-paged support; target selection and output scope must not expand when support
-Objects are included for interpretation.
+Mapping starts a separate model conversation for each Entity/System pair. Its
+default `mapping_basis` contains the target, ordered fields, supporting sources
+and the dependencies identified for this pair. One-shot Mapping receives those
+details inline. A join to another eligible source brings in its endpoints and
+evidence. Tool-assisted Mapping also gets a directory of eligible alternatives
+and can fetch their columns, full join measurements and upstream rules by
+reference. Explicit full-catalog readers remain available to custom prompts.
+
+Code Generation starts one conversation per target with its contributing Systems.
+The default reads the applied transformations and requests the source keys and
+columns they use. When a reference needs resolving, it can first request a directory
+of eligible sources without their columns.
+
+Validation covers one System per conversation. Its directory identifies all mapped
+targets, saved Groups and Checks, shared evidence and available Code. Readers can
+retrieve exact target rules, source columns and individual SQL artifacts as needed.
+The proposal covers the whole System. A Group can retain an unchanged Check by
+name. The backend restores its full definition from the frozen Group before
+validating the proposal.
+
+Use the registered source identity and the comparison rules for each modeled
+relationship. The mapped return field can be a natural key or a surrogate key.
+
+For a standard single SELECT, the agent can write each value expression in its
+Attribute document and use `SELECT <mapped_columns> FROM ...` for the Object
+sample. A read-only CTE may prepare that rowset. Before saving, the backend
+inserts the mapped expressions in target order with their aliases. Code Generation
+receives the expanded sample. Transformations
+with different projections per branch or separate default-record rules use a full
+sample query. See [current decisions](architecture/decisions.md) for partial
+Mapping, locked fields and the scope of the selected target.
 
 Code reads Object-level rowset/filter/stage logic and Attribute expressions together.
 Its `artifact_requirements` is only frozen file layout, selected source-System codes

@@ -160,6 +160,7 @@ EXPECTED_NAMES: dict[str, set[str]] = {
     | FINDINGS
     | {"conformance_candidates", "selected_logical_entities", "prefix_renames"},
     "mapping": {
+        "mapping_basis",
         "mapping_support",
         "mapping_support_records",
         "mapping_route",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any, cast
 
 import pytest
@@ -39,7 +40,9 @@ def _check(*, active: bool = True) -> ValidationCheckRecord:
         validation_check_description="Required customer identities must be present.",
         validation_category_code="technical.count",
         validation_severity="blocking",
-        validation_query_sql="SELECT count(*) FROM catalog.gold.dim_customer WHERE customer_id IS NULL",
+        validation_query_sql=(
+            "SELECT count(*) FROM catalog.gold.dim_customer WHERE customer_id IS NULL"
+        ),
         validation_comparison_query_sql=None,
         validation_result_data_type="integer",
         validation_comparison_operator="equal",
@@ -77,11 +80,16 @@ def _candidate(*, query: str | None = None) -> JsonValue:
                     "validation_checks": [
                         {
                             "validation_check_name": "RequiredCustomerIdentity",
-                            "validation_check_description": "Required customer identities must be present.",
+                            "validation_check_description": (
+                                "Required customer identities must be present."
+                            ),
                             "validation_category_code": "technical.count",
                             "validation_severity": "blocking",
                             "validation_query_sql": query
-                            or "SELECT count(*) FROM catalog.gold.dim_customer WHERE customer_id IS NULL",
+                            or (
+                                "SELECT count(*) FROM catalog.gold.dim_customer "
+                                "WHERE customer_id IS NULL"
+                            ),
                             "validation_comparison_query_sql": None,
                             "validation_result_data_type": "integer",
                             "validation_comparison_operator": "equal",
@@ -246,6 +254,133 @@ def test_reconciliation_returns_no_op_for_identical_applied_state() -> None:
     )
 
     assert changes == ()
+
+
+@pytest.mark.parametrize(
+    "group_locked,check_locked", [(False, False), (True, False), (False, True)]
+)
+def test_retaining_an_active_check_matches_echoing_its_full_definition(
+    group_locked: bool,
+    check_locked: bool,
+) -> None:
+    group_name = "Logical · reconciliation"
+    group = _group().model_copy(
+        update={"validation_group_name": group_name, "is_locked": group_locked}
+    )
+    check = _check().model_copy(
+        update={"validation_group_name": group_name, "is_locked": check_locked}
+    )
+    system = _context(groups=(group,), checks=(check,)).model_copy(
+        update={"modeled_entity_type": "logical_entity", "current_group_names": ()}
+    )
+    validator = ValidationSystemCandidateValidator(context=system)
+    retained = cast(dict[str, Any], _candidate())
+    retained["validation_groups"][0]["validation_checks"] = [
+        {"keep_existing_check": check.validation_check_name.upper()}
+    ]
+    parsed = validator.parse_validated(retained)
+    # Lookup accepts the same normalized key as reconciliation. The saved
+    # spelling, SQL, operands and locks survive, even when the Group is stale.
+    assert parsed.checks == (check,)
+    changes = reconcile_validation_candidates(
+        context=ValidationExecutionContext(systems=(system,)), candidates=(parsed,)
+    )
+    assert changes == reconcile_validation_candidates(
+        context=ValidationExecutionContext(systems=(system,)),
+        candidates=(validator.parse_validated(_candidate()),),
+    )
+    assert [change.dataset for change in changes] == ([] if group_locked else ["validation_group"])
+
+
+def test_repeat_run_does_not_resend_saved_sql_or_typed_comparison_values() -> None:
+    full = cast(dict[str, Any], _candidate())
+    checks = full["validation_groups"][0]["validation_checks"]
+    template = checks.pop()
+    for i in range(24):
+        checks.append(
+            {
+                **template,
+                "validation_check_name": f"ExpectedIdentity{i}",
+                "validation_query_sql": (
+                    "SELECT customer_id FROM catalog.gold.dim_customer "
+                    f"WHERE customer_id = {i} /* " + "saved SQL description " * 100 + "*/"
+                ),
+                "validation_comparison_operator": "in",
+                "validation_comparison_value_type": "literal_list",
+                "validation_comparison_value": [i, i + 1],
+            }
+        )
+    original = ValidationSystemCandidateValidator(context=_context()).parse_validated(full)
+    system = _context(groups=original.groups, checks=original.checks)
+    compact = cast(dict[str, Any], _candidate())
+    compact["validation_groups"][0]["validation_checks"] = [
+        {"keep_existing_check": check.validation_check_name} for check in original.checks
+    ]
+    assert len(json.dumps(compact)) < len(json.dumps(full)) / 20
+    validator = ValidationSystemCandidateValidator(context=system)
+    candidate = validator.parse_validated(compact)
+    assert candidate == original
+    assert reconcile_validation_candidates(
+        context=ValidationExecutionContext(systems=(system,)), candidates=(candidate,)
+    ) == ()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "group_changes,check_changes,system_changes,code",
+    [
+        ({}, {"validation_check_name": "AnotherCheck"}, {}, "candidate.validation_check_reference"),
+        ({}, {"validation_group_name": "AnotherGroup"}, {}, "candidate.validation_check_reference"),
+        ({}, {"system_code": "another"}, {}, "candidate.validation_check_reference"),
+        ({}, {"tenant_code": "another"}, {}, "candidate.validation_check_reference"),
+        ({}, {"is_active": False}, {}, "candidate.validation_check_reference"),
+        ({"is_active": False}, {}, {}, "candidate.validation_check_reference"),
+        ({"system_code": "another"}, {}, {}, "candidate.validation_check_reference"),
+        ({}, {}, {"modeled_entity_type": "logical_entity"}, "candidate.validation_check_reference"),
+        ({}, {}, {"reserved_group_names": ("reconciliation",)}, "candidate.validation_group_scope"),
+        ({}, {"validation_query_sql": "SELECT 1"}, {}, "candidate.validation_check_tautological"),
+        (
+            {},
+            {"validation_query_sql": "SELECT * FROM unqualified"},
+            {},
+            "candidate.validation_query_invalid",
+        ),
+    ],
+)
+async def test_retain_check_enforces_current_identity_lifecycle_and_sql_rules(
+    group_changes: dict[str, object],
+    check_changes: dict[str, object],
+    system_changes: dict[str, object],
+    code: str,
+) -> None:
+    value = cast(dict[str, Any], _candidate())
+    value["validation_groups"][0]["validation_checks"] = [
+        {"keep_existing_check": _check().validation_check_name}
+    ]
+    system = _context(
+        groups=(_group().model_copy(update=group_changes),),
+        checks=(_check().model_copy(update=check_changes),),
+    ).model_copy(update=system_changes)
+    result = await ValidationSystemCandidateValidator(context=system).validate(value)
+    assert result.issues[0].code == code
+
+
+@pytest.mark.asyncio
+async def test_retained_checks_cannot_be_overridden_or_duplicated() -> None:
+    validator = ValidationSystemCandidateValidator(
+        context=_context(groups=(_group(),), checks=(_check(),))
+    )
+    value = cast(dict[str, Any], _candidate())
+    checks = value["validation_groups"][0]["validation_checks"]
+    retained = {"keep_existing_check": _check().validation_check_name}
+    checks.append(retained)
+    result = await validator.validate(value)
+    assert result.issues[0].code == "candidate.validation_check_duplicate"
+    checks[:] = [retained, retained]
+    result = await validator.validate(value)
+    assert result.issues[0].code == "candidate.validation_check_duplicate"
+    checks[:] = [{**retained, "validation_check_name": "RenamedCheck"}]
+    assert (await validator.validate(value)).issues
 
 
 @pytest.mark.asyncio

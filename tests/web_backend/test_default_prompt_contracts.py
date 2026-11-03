@@ -63,13 +63,21 @@ def test_seeded_defaults_render_registered_inputs_and_select_supported_tools(
     tool_names = cast(list[str], default["agent_tool_names"] or [])
     if mode == "one_shot":
         assert not tool_names
+    elif workflow == "mapping":
+        registered = {tool.name for tool in registered_tool_definitions(workflow)}
+        assert tool_names == ["get_mapping_basis"]
+        assert {
+            "get_mapping_basis", "get_mapping_support", "get_mapping_support_records",
+            "get_mapping_target", "get_mapping_sources",
+        } <= registered
+    elif workflow == "validation":
+        assert set(tool_names) == {"get_validation_basis", "get_current_code"}
+        registered = {tool.name for tool in registered_tool_definitions(workflow)}
+        assert registered - set(tool_names) == {
+            "get_mapping_evidence", "get_applied_groups", "get_applied_checks",
+        }
     else:
-        # Defaults use pageable Mapping support; the legacy Mapping reader stays callable.
-        assert tool_names == sorted(
-            tool.name
-            for tool in registered_tool_definitions(workflow)
-            if not (workflow == "mapping" and tool.name == "get_mapping_support")
-        )
+        assert tool_names == sorted(tool.name for tool in registered_tool_definitions(workflow))
     rendered = render_prompt(
         templates=PromptComponentTemplates(
             system=default["system_prompt"], instruction=default["instruction_prompt"]

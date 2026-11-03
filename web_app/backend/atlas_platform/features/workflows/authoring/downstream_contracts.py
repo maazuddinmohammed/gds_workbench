@@ -3,7 +3,7 @@
 from copy import deepcopy
 from typing import Any
 
-from .mapping_input_schemas import mapping_input_schemas
+from .mapping_input_schemas import MAPPING_EVIDENCE_KINDS, mapping_input_schemas
 
 _MAPPING_TEMPLATES_SCHEMA = mapping_input_schemas()["mapping_templates"]
 
@@ -390,6 +390,43 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                 "profiles": [],
                 "context_records": [],
             },
+        },
+        "mapping_basis": {
+            "description": "Ordered cards for one Mapping pair. The target and its fields carry "
+            "readiness actions, lineage and saved rules. Each eligible source declares its "
+            "reference and column_fields for the following column values. Remaining evidence "
+            "cards carry relationships, upstream rules, Context and measured evidence.",
+            "value_schema": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "kind": {
+                            "enum": [
+                                "target",
+                                "field",
+                                "source",
+                                "column",
+                                *MAPPING_EVIDENCE_KINDS,
+                            ]
+                        },
+                        "record": {"type": "object"},
+                    },
+                    "required": ["kind", "record"],
+                },
+            },
+            "example": [
+                {
+                    "kind": "target",
+                    "record": {
+                        "entity_schema_name": "silver_crm",
+                        "entity_name": "Customer",
+                        "action": "author",
+                        "object_dependency_order": 0,
+                    },
+                }
+            ],
         },
     },
     "code_generation": {

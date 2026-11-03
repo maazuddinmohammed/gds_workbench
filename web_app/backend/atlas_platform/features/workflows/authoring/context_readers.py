@@ -100,6 +100,13 @@ def reader_definitions(
                 "required": list(fields),
                 "additionalProperties": False,
             }
+            if name == "get_code_sources":
+                key_schema["properties"]["attribute_names"] = {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {"type": "string", "minLength": 1, "pattern": r"\S"},
+                }
+                properties["directory_only"] = {"type": "boolean"}
             if selector == "source_keys":
                 key_schema = {
                     "anyOf": [
@@ -115,7 +122,9 @@ def reader_definitions(
                         },
                     ]
                 }
-            if selector.endswith("_names") or selector == "context_record_ids":
+            if selector.endswith("_names") or selector in {
+                "context_record_ids", "candidate_refs", "detail_refs",
+            }:
                 key_schema = {"type": "string", "minLength": 1, "pattern": r"\S"}
             properties[selector] = (
                 {"anyOf": [key_schema, {"type": "null"}]}
@@ -127,6 +136,40 @@ def reader_definitions(
             "paged. Continue with cursor alone; copy complete natural keys from prior results. "
             "Unknown keys fail; no database queries or new measurements."
         )
+        default_behavior = (
+            "No selection or empty selectors return all eligible records, "
+            "paged. Continue with the returned cursor alone."
+        )
+        if name == "get_mapping_basis":
+            description = (
+                "Read frozen Mapping evidence. Start with {} for the target, fields, supporting "
+                "sources, relevant lookup evidence and the remaining eligible source headers. "
+                "When a rule calls for a deferred source, pass its exact ref in candidate_refs "
+                "to read its columns, lineage and upstream Mapping. Unknown or ineligible "
+                "refs fail. Continue each selection with its returned cursor alone."
+            )
+            default_behavior = (
+                "Omitted or empty candidate_refs returns the core evidence and candidate headers. "
+                "Read deferred sources by exact ref only when needed."
+            )
+            properties["candidate_refs"]["description"] = (
+                "Exact ref values from candidate source headers, e.g. s7."
+            )
+        if name == "get_code_sources":
+            description = (
+                "Read frozen source metadata by source_object_keys. Each five-part key may "
+                "include attribute_names for just the columns needed. directory_only=true "
+                "returns eligible source headers and coordinates with empty attribute lists. "
+                "An unfiltered {} returns full details across pages. Continue with cursor alone."
+            )
+        if name == "get_validation_basis":
+            description = (
+                "Read the complete frozen System coverage index and saved ledger headers. Select "
+                "detail_refs from it for a target's Mapping, a source's columns or a saved "
+                "Check's exact definition. Use <ref>:<attribute name> for an individual field. "
+                "Continue each selection with cursor alone."
+            )
+            default_behavior = "No selection returns all coverage and ledger headers."
         if name == "get_objects":
             description = (
                 "Return scoped Objects, optionally narrowed by the full Source Connection key "
@@ -157,6 +200,17 @@ def reader_definitions(
                 ),
                 cast(dict[str, Any], {}),
             )
+        if name == "get_validation_basis":
+            item_schema = {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "kind": {"type": "string"},
+                    "ref": {"type": "string"},
+                    "record": {"type": "object"},
+                },
+                "required": ["kind", "record"],
+            }
         result_schema: dict[str, Any] = {
             "type": "object",
             "additionalProperties": False,
@@ -181,7 +235,9 @@ def reader_definitions(
             "required": ["items", "next_cursor", "is_complete", "incomplete_object_key"],
             "$defs": schema.get("$defs", {}),
         }
-        if variable not in {"object_attribute_context", "object_relationship_context"}:
+        if variable not in {
+            "object_attribute_context", "object_relationship_context", "source_metadata"
+        }:
             result_schema["properties"]["incomplete_object_key"] = {"type": "null"}
         result_schema["allOf"] = [
             {
@@ -219,8 +275,7 @@ def reader_definitions(
                         "incomplete_object_key": None,
                     },
                 },
-                default_behavior="No selection or empty selectors return all eligible records, "
-                "paged. Continue with the returned cursor alone.",
+                default_behavior=default_behavior,
             )
         )
     return tuple(definitions)
@@ -264,6 +319,10 @@ class FrozenContextReaders:
             self._invalid()
         variable, selector, _ = self._specs[tool_name]
         selection = arguments.get(selector) if selector else None
+        if tool_name == "get_code_sources" and arguments.get("directory_only"):
+            if selection not in (None, []):
+                self._invalid()
+            selection = "directory"
         cursor = arguments.get("cursor")
         offset, child = 0, 0
         if cursor is not None:
@@ -277,7 +336,43 @@ class FrozenContextReaders:
         rows = self._select(tool_name, selection)
         items: list[Any] = []
         incomplete: dict[str, Any] | None = None
+        remaining_columns = self._max_page_records
         while offset < len(rows) and len(items) < self._max_page_records:
+            if variable == "source_metadata":
+                row = rows[offset]
+                obj = row["object"]
+                attributes = obj.get("attributes", [])
+                # A source table can be wider than one tool page. Count columns, as
+                # well as records and bytes, before copying anything into the result.
+                end = min(len(attributes), child + remaining_columns)
+                source_key = {f: obj[f] for f in OBJECT_FIELDS}
+                part = {**row, "object": {**obj, "attributes": attributes[child:end]}}
+                more = end < len(attributes)
+                cursor_hint = "x" * 64 if more or offset + 1 < len(rows) else None
+                if not self._fits([*items, part], cursor_hint, source_key if more else None):
+                    low, high = child, end
+                    while low < high:
+                        mid = (low + high + 1) // 2
+                        part["object"]["attributes"] = attributes[child:mid]
+                        if self._fits([*items, part], "x" * 64, source_key):
+                            low = mid
+                        else:
+                            high = mid - 1
+                    if low == child:
+                        if items:
+                            break
+                        raise AgentContextToolResultTooLargeError()
+                    end = low
+                    part["object"]["attributes"] = attributes[child:end]
+                items.append(deepcopy(part))
+                remaining_columns -= max(1, end - child)
+                if end < len(attributes):
+                    child, incomplete = end, source_key
+                    break
+                offset, child = offset + 1, 0
+                if remaining_columns == 0:
+                    break
+                continue
             row = deepcopy(rows[offset])
             if self._max_result_bytes is None:
                 items.append(row)

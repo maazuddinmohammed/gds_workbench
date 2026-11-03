@@ -31,6 +31,7 @@ from atlas_platform.capabilities import (
 )
 from atlas_platform.features.workflows.authoring.agent_execution import (
     AGENT_OUTPUT_CONTRACT_INSTRUCTION,
+    AgentExecutionFailedError,
     AgentExecutionRequest,
     AgentExecutionResult,
     agent_input_payload,
@@ -403,8 +404,25 @@ class ValidationRepairRunner:
                 and agent_request_envelope_bytes(attempt_request) > context_limit
             ):
                 raise AgentContextTooLargeError()
-            execution = await self._executor.execute(attempt_request)
             attempt_count += 1
+            try:
+                execution = await self._executor.execute(attempt_request)
+            except AgentExecutionFailedError as error:
+                # A full rejected answer can fill a repair request even when the
+                # original task fits. Spend a remaining attempt only on a smaller request.
+                if (
+                    error.code != "agent_context_exhausted"
+                    or repair is None
+                    or repair.get("previous_candidate") is None
+                    or attempt_count > request.selection.validation_retry_count
+                ):
+                    raise
+                compact = _repair_without_candidate(repair)
+                sent = cast(dict[str, JsonValue], attempt_context)["repair"]
+                if _json_bytes(compact) >= _json_bytes(sent):
+                    raise
+                repair = compact
+                continue
             turn_count += execution.turn_count
             tool_call_count += execution.tool_call_count
             if _json_bytes(execution.candidate) > candidate_byte_limit:
@@ -460,6 +478,22 @@ class ValidationRepairRunner:
             }
 
 
+def _repair_without_candidate(repair: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    issues = repair.get("validation_issues")
+    if not isinstance(issues, list) or not issues:
+        raise AgentCandidateValidationError()
+    return {
+        "attempt": repair.get("attempt"),
+        "previous_candidate": None,
+        "previous_candidate_digest": sha256(
+            _json_data(repair.get("previous_candidate"))
+        ).hexdigest(),
+        "previous_candidate_omitted": True,
+        "validation_issue_count": len(issues),
+        "validation_issues": issues,
+    }
+
+
 def _bounded_attempt_context(
     *,
     original_context: JsonValue,
@@ -473,23 +507,17 @@ def _bounded_attempt_context(
             "repair": deepcopy(repair),
         },
     )
-    if maximum_bytes is None or _json_bytes(attempt) <= maximum_bytes:
+    # agent_input_payload includes only repair from this envelope. Evidence already
+    # rendered into the instruction is counted separately from the private frozen catalog.
+    if maximum_bytes is None or _json_bytes(repair) <= maximum_bytes:
         return attempt
     if repair is None:
         raise AgentContextTooLargeError()
 
-    previous_candidate = repair.get("previous_candidate")
     raw_issues = repair.get("validation_issues")
     if not isinstance(raw_issues, list) or not raw_issues:
         raise AgentCandidateValidationError()
-    compact_repair: dict[str, JsonValue] = {
-        "attempt": repair.get("attempt"),
-        "previous_candidate": None,
-        "previous_candidate_digest": sha256(_json_data(previous_candidate)).hexdigest(),
-        "previous_candidate_omitted": True,
-        "validation_issue_count": len(raw_issues),
-        "validation_issues": [],
-    }
+    compact_repair = _repair_without_candidate(repair)
     compact_attempt = cast(
         JsonValue,
         {
@@ -505,14 +533,14 @@ def _bounded_attempt_context(
             refs = list(cast(list[JsonValue] | tuple[JsonValue, ...], issue["source_refs"]))
             issue["source_refs"] = refs
             # Preserve the coverage counts and as many complete identities as fit.
-            while refs and _json_bytes(compact_attempt) > maximum_bytes:
+            while refs and _json_bytes(compact_repair) > maximum_bytes:
                 refs.pop()
                 issue["source_refs_truncated"] = True
-        if _json_bytes(compact_attempt) > maximum_bytes:
+        if _json_bytes(compact_repair) > maximum_bytes:
             compact_repair["validation_issues"] = accepted_issues
             break
         accepted_issues.append(issue)
-    if not accepted_issues or _json_bytes(compact_attempt) > maximum_bytes:
+    if not accepted_issues or _json_bytes(compact_repair) > maximum_bytes:
         raise AgentCandidateValidationError()
     return compact_attempt
 

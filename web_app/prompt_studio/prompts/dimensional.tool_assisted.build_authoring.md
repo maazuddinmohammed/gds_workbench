@@ -42,7 +42,7 @@ This is the data you work with. The examples only explain the terms; they are no
 5. **How bronze is loaded.**
    - Usually one source table loads one bronze table, sometimes with a simple change such as a filter or a rename. The load may add technical (metadata) columns, such as `GDSBatchID`, at the end.
    - Several instances can load one bronze table, so an id can repeat once per instance. The load then adds a column just before the technical columns whose values name the instance: an instance, database, member firm or file code or name.
-   - With `GDSBatchID`, each load appends its new and changed rows under a higher batch id, so one record can appear in several loads; its row with the highest `GDSBatchID` is current. Without it, each load replaces the table, so it matches its source.
+   - Use each Bronze Object's registered `batch_attribute_name`. With `GDSBatchID`, each load appends its new and changed rows under a higher batch id. For an incrementing feed, its highest registered batch per complete source key gives the current row. An opaque batch identifier needs a separate ordering rule. An explicit null registration means replace-on-load. If the registration is unavailable, leave the load mode unknown. The target's source rule determines which rows it needs.
 
 6. **Inputs, when given.** `source_context`: one entry per source instance, with its Tenant, System and Connection and their types and descriptions. `gds_context`: the lake codes and zone where input tables are stored, or where Logical or Dimensional output will go. `ingestion_mapping`: which source tables load which bronze tables.
 
@@ -140,28 +140,38 @@ Conform separate Logical Entities into one Dimension only when meaning, grain, k
 namespace and lookup and history rules align; the same numeric ID in two Systems or instances
 is not enough, and matching such members needs an explicit rule.
 
-- Map Logical types, then confirm with grain and definitions: transaction_line usually
-  becomes the transaction Fact at its lowest detail; cite its header Entity too, so the
-  line carries header dates, parties and the document number (degenerate). A
-  transaction without lines, or an event, becomes a transaction Fact; snapshot a
-  periodic_snapshot; a process whose row tracks milestone dates an
-  accumulating_snapshot; plan a Fact at the plan's grain, apart from actuals. core and
-  agreement become Dimensions; reference a Dimension or descriptors absorbed into one;
-  subtype and fixed-level hierarchy Entities are absorbed into their Dimension, a
-  variable-depth hierarchy into a Bridge; association and list a Bridge or factless
-  Fact; history versioned Dimension values or a status-change Fact; other by its
-  definition and grain. Logical natural keys suggest
-  business keys; a Logical generated key (<Entity>ID) is a Silver identifier, never the
-  Gold key; Logical audit Attributes are load metadata, not Gold business Attributes.
+- Choose the analytical subject and one-row grain from the business question and
+  evidenced records. Logical types are clues. A transaction line is often the lowest
+  useful Fact grain; cite the header too when it supplies roles, dates or the document
+  number. Use a transaction Fact for an event, a periodic snapshot for a recurring
+  observation, and an accumulating snapshot for one process updated across milestones.
+  Keep plans at their own grain. A reference list can supply a shared Dimension or
+  descriptors of its owner; keep fixed-level hierarchy descriptors together and
+  consider a Bridge for evidenced variable-depth paths. Logical natural keys suggest
+  business keys. A Logical generated key (<Entity>ID) identifies Silver rows.
+  Gold keys and audit fields follow Gold policy.
+- When a batch or partition selects the inputs for a run, record that restriction in
+  each affected Logical Entity source rationale. Count the business records within
+  that selection. Keep the load identifier out of the business Attributes and keys.
+  Include it in the grain only when the reporting requirement distinguishes deliveries
+  of the same record in different loads, or counts the loads themselves.
+- Current and history sources can describe versions of one analytical subject or
+  process. Combine them when the version key, source time and rule for overlapping
+  versions are supported. In each Logical Entity source rationale, state which rows
+  it contributes and how its versions are identified. Preserve an evidenced current or
+  history distinction and specify current versus as-of Dimension lookups where needed.
+  A history suffix or type_2 setting alone establishes none of these rules. Keep
+  distinct events, snapshots and incompatible version grains separate.
 - Give every Fact the dimensional_fact_types code whose description fits one row
   (transaction for one row per business event); Dimensions and Bridges have null. Every
   Entity needs a grain definition, Dimensions included (one row per Customer, or per
   Customer version under type_2). Keep header/line and event/snapshot grains separate,
   and never repeat header totals on lines as additive measures.
-- Dimensions describe analytical subjects with their business identity and meaningful
-  descriptive detail, without technical source metadata. Create a Bridge only for an
-  evidenced multi-valued association at a stated grain; Bridge weights need an explicit
-  allocation rule.
+- A Dimension describes a reusable subject. A recorded participation, assignment or
+  eligibility at its own reporting grain can be a factless Fact: state what one row
+  counts. Use a Bridge when another analytical subject must traverse a supported
+  multivalued membership. Identify the two sides, the membership grain and the
+  reporting use. Weights require an explicit allocation rule.
 - Keep a degenerate_dimension Attribute for a supported transaction identifier (such as
   an order number) on the Fact when it has no descriptive context of its own: it is an
   ordinary business Attribute, not a separate Dimension or a field value.
@@ -224,9 +234,13 @@ is not enough, and matching such members needs an explicit rule.
   and Entities. Never return a saved Fact or Bridge edge to edit it, because the backend
   re-projects its foreign key: to change its role, add the new business edge and retire
   the saved one.
-- An endpoint is one Attribute: never emit separate edges for components of a composite
-  predicate or attach an unrelated placeholder Attribute. Omit unrepresentable edges and
-  state the limitation in the child Attribute's definition.
+- Each endpoint is one Attribute. When one child key identifies a Dimension member
+  within a documented parent population, emit that edge. A parent-only filter, such
+  as restricting members to the current version, needs no second child endpoint.
+  Record the filter and any rule for retaining unmatched child rows in the relationship
+  basis for Mapping. If the lookup still requires several independent child key parts,
+  never drop a part, create separate edges or substitute a placeholder. Omit an edge
+  that cannot represent the lookup and state the limitation in the child definition.
 
 Entity dependency order is non-negative, with referenced Dimensions before the Facts and
 Bridges that use them; Attribute ordinals are positive.

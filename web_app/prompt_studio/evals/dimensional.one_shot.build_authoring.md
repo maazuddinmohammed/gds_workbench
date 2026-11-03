@@ -72,3 +72,23 @@ Review notes:
 - candidate run-06 confusing [S5.1]: The grain wording names SourceSystemID plus the business key, but saved Vehicle's grain is 'One row per VehicleNumber'; unclear whether to correct saved grains or follow the wording only for new Entities.
 - candidate run-06 comment: The prompt is detailed and mostly consistent, and the schema plus S5 to S7 were enough to build a valid answer. The least certain choices were the header Fact type, DateKey for the unprefixed Date, and whether Facts should cite Vehicle and Workshop. DimSupplier and the fuel_purchase object were left unused because no selected Logical record references them.
 
+## 2026-11-03 · `grdm_fact_versions` · fixture `assignment_versions` · 2 runs
+
+| Measure | baseline | candidate |
+|---|---|---|
+| Results returned | 1/1 | 1/1 |
+| Valid answers (schema) | 1/1 | 1/1 |
+| Expected items found | 0/1 (0%) | 1/1 (100%) |
+| Forbidden items returned | 0 | 0 |
+| Other items per valid answer | 1.0 | 0.0 |
+| Clarity (1–5) | 5.0 | 5.0 |
+| Confidence (1–5) | 5.0 | 5.0 |
+| Blockers cited | – | – |
+| Confusing cited | – | – |
+
+Suggested verdict: **better**
+
+Review notes:
+- candidate run-01 comment: The overlap rule in I2 specifies which duty role and current status to retain when both sources contain the same version.
+- baseline run-02 comment: I2 supplies the exact fact name, version identity and overlap rule. Those details determine which role to report even when the current and archive rows disagree.
+

@@ -257,10 +257,11 @@ it contradicts the designed grain or keys. A source instance column joins the na
 key; load batch columns such as `GDSBatchID` are never key parts; foreign-key
 nullability follows business meaning. SourceSystemID has one value per System, not per
 instance, so an Entity that mixes instances of one System keeps an instance Attribute in
-its natural key. Build states the current-row rule of an appended-load table
-(highest `GDSBatchID` per key) as that table source's note; Mapping applies a row
-choice only when lineage, a source note or Context states it, and otherwise reports the
-missing rule. Optimize shows the Entities whose foreign keys
+its natural key. When a target needs current rows from an appended-load table,
+Build records the highest value of the registered batch column per complete key
+in that table's source note. A Project population rule can specify a different slice.
+Mapping applies a row choice only when lineage, a source note or Context states
+it, and otherwise reports the missing rule. Optimize shows the Entities whose foreign keys
 point at a name-variant Entity in full, so a merge can rename those foreign keys.
 
 Mapping translates each target Attribute's saved lineage: its source columns and the

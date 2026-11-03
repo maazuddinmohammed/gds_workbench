@@ -19,7 +19,7 @@ def compile_mapping_output_schema(
         dict[str, JsonValue],
         deepcopy(CompleteMappingCandidateV1.model_json_schema()),
     )
-    schema["description"] = (
+    description = (
         "Return only the Mapping transformation content. Identity, lifecycle status, "
         "templates and provenance are derived by the backend. Partial output is valid: "
         "return supported Object and Attribute transformations and leave unsupported "
@@ -41,9 +41,55 @@ def compile_mapping_output_schema(
         guidance["attribute_mapping_transformation_document"] = _template_guidance(
             attribute_template
         )
+    if supports_projection_shorthand(preparation):
+        description += (
+            " For the standard templates a new sample_query may use SELECT <mapped_columns> "
+            "FROM ... . Supply each projected Attribute's SQL expression in transformation_logic "
+            "without its output alias and with default_record null. The backend supplies the "
+            "ordered SELECT list. Use a full query for separate defaults or multi-branch logic."
+        )
+    schema["description"] = description
     if guidance:
         schema["x-gds-output-template-guidance"] = guidance
     return schema
+
+
+def supports_projection_shorthand(preparation: MappingPreparation) -> bool:
+    """Both selected templates must use the standard layer-specific field contracts."""
+    layer = preparation.plan.modeled_entity_type.removesuffix("_entity")
+    selections = preparation.plan.output_template_selections
+    for kind, selection, expected in (
+        (
+            "object",
+            selections.mapping_object,
+            {"source_tables": "array", "filter_criteria": "string", "sample_query": "string"},
+        ),
+        (
+            "attribute",
+            selections.mapping_attribute,
+            {
+                "source_columns": "array",
+                "default_record": "string",
+                "transformation_logic": "string",
+            },
+        ),
+    ):
+        if selection is None:
+            continue
+        template = _selected_template(preparation, f"mapping_{kind}")
+        if (
+            template is None
+            or template.code != f"mapping_{layer}_{kind}_default"
+            or template.modeled_entity_type != preparation.plan.modeled_entity_type
+            or {field.name: field.data_type for field in template.fields} != expected
+            or not all(
+                field.is_required
+                and (field.data_type != "array" or field.array_item_type == "object")
+                for field in template.fields
+            )
+        ):
+            return False
+    return True
 
 
 def _selected_template(

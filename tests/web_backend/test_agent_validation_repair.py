@@ -10,6 +10,7 @@ from atlas_mcp.domain.errors import AtlasError
 from atlas_platform.capabilities import AgentRunSelection
 from atlas_platform.features.workflows.authoring.agent_execution import (
     AGENT_OUTPUT_CONTRACT_INSTRUCTION,
+    AgentExecutionFailedError,
     AgentExecutionRequest,
     AgentExecutionResult,
 )
@@ -197,6 +198,45 @@ def test_default_agent_context_policy_has_no_input_size_ceiling() -> None:
     assert policy.stage_max_context_bytes is None
     assert policy.max_candidate_bytes <= 10 * 1024 * 1024
     assert policy.max_validation_issues <= 200
+
+
+async def test_context_budget_counts_only_evidence_actually_sent_to_the_provider() -> None:
+    request = _request(context={"frozen_reader_catalog": "private" * 30_000})
+    executor = FakeExecutor(candidates=[{}])
+    await ValidationRepairRunner(
+        executor=executor, policy=_policy(one_shot_bytes=agent_request_envelope_bytes(request))
+    ).run(request=request, validator=FakeValidator(outcomes=[()]))
+    assert len(executor.requests) == 1
+
+
+@pytest.mark.parametrize("retries", [1, 2])
+async def test_provider_window_rejecting_a_full_repair_honors_retry_budget(retries: int) -> None:
+    request = _request(retries=retries).model_copy(update={"workflow": "mapping"})
+    issue = AgentValidationIssue(code="candidate.invalid_rule", path=(), message="Fix the rule.")
+    previous: JsonValue = {"rule": "x" * 20_000}
+
+    class WindowLimitedExecutor(FakeExecutor):
+        async def execute(self, request: AgentExecutionRequest) -> AgentExecutionResult:
+            if agent_request_envelope_bytes(request) > 5_000:
+                self.requests.append(request)
+                raise AgentExecutionFailedError("context_exhausted")
+            return await super().execute(request)
+
+    executor = WindowLimitedExecutor(candidates=[previous, None, {}])
+    execute = ValidationRepairRunner(executor=executor, policy=load_default_agent_context_policy())
+    run = execute.run(request=request, validator=FakeValidator(outcomes=[(issue,), ()]))
+    if retries == 1:
+        with pytest.raises(AgentExecutionFailedError, match="context window"):
+            await run
+        assert len(executor.requests) == 2
+    else:
+        result = await run
+        assert result.attempt_count == 3
+        assert [r.authoring_attempt for r in executor.requests] == [1, 2, 3]
+        feedback = cast(dict[str, JsonValue], executor.requests[-1].context)["repair"]
+        assert isinstance(feedback, dict)
+        assert feedback["previous_candidate_omitted"] is True
+        assert feedback["validation_issues"] == [issue.model_dump(mode="json")]
 
 
 @pytest.mark.asyncio

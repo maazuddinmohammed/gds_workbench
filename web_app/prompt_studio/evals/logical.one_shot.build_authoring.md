@@ -94,3 +94,37 @@ Review notes:
 - candidate run-06 confusing [I1]: Check 7 says no Attribute is a new Entity's <Entity>ID, which could be read to forbid the foreign key SalesOrderID on SalesOrderLine because SalesOrder is also new. I read it as forbidding only an Entity's own generated key, as in the S4 example.
 - candidate run-06 comment: The rules for multi-instance tables, the SourceSystemID grain and the cross-System foreign key note were each stated once and were enough to decide. A worked example of a multi-instance child's foreign key note, such as Customer to Department, would remove my main doubt about wording. I made all four foreign keys nullable and fixed the Opportunity lookup to ORD_UK because its column description names the UK database.
 
+## 2026-11-03 · `grdm_catalog_final` · fixture `discriminated_catalog` · 6 runs
+
+| Measure | baseline | candidate |
+|---|---|---|
+| Results returned | 3/3 | 3/3 |
+| Valid answers (schema) | 3/3 | 3/3 |
+| Expected items found | 6/6 (100%) | 6/6 (100%) |
+| Forbidden items returned | 0 | 0 |
+| Other items per valid answer | 0.0 | 0.0 |
+| Clarity (1–5) | 4.0 | 4.7 |
+| Confidence (1–5) | 5.0 | 5.0 |
+| Blockers cited | – | – |
+| Confusing cited | S5 ×3, S8 ×3 | S8 ×3, S7 ×1 |
+
+Suggested verdict: **same**
+
+Review notes:
+- candidate run-01 confusing [S8]: The configured coverage threshold is 100%, while the schema description says 70%. Both require the single table in this run.
+- candidate run-01 confusing [S7]: The instruction to cite audit SourceSystemID in the grain sounds unconditional, although the preceding sentence requires a namespace only for entities spanning multiple systems or instances.
+- candidate run-01 comment: S5 gives enough evidence to use family as a filter and retain the undecoded text on each entry.
+- baseline run-02 confusing [S5]: The column-accounting checklist omits the case where a discriminator is fully represented by an Entity's source filter. S4 provides the filter syntax.
+- baseline run-02 confusing [S8]: The supplied coverage setting is 100%, but the output schema description says 70%. Both require the single table here.
+- baseline run-02 comment: The Context decision names the lists and gives their exact predicates. The source description leaves the text encoding and member identity unknown, so no association can be derived.
+- candidate run-03 confusing [S8]: The supplied coverage threshold is 100%, while the output schema description says 70%. Both require the single table here.
+- candidate run-03 comment: S5 explains how the documented predicates account for the family column and why the undecoded text stays on each entry.
+- baseline run-04 confusing [S5]: Step 6 lists ways to account for a business column but omits its use solely as a row filter. Here family is constant within each list, and the S4 source notes capture both values.
+- baseline run-04 confusing [S8]: The configured threshold is 100%, while the output schema description says 70%. Both require the one table in this run.
+- baseline run-04 comment: S5 calls for separate repeating children. The Context decision requires the original text, and no delimiter or member identity supports a lossless split.
+- baseline run-05 confusing [S5]: Step 6 lists attributes, foreign keys and technical exclusions as ways to account for columns. For family, the row filter allowed by S4 already captures its full meaning.
+- baseline run-05 confusing [S8]: The supplied coverage threshold is 100%, while the output schema description says 70%. Both require the single table here.
+- baseline run-05 comment: The Context decision supplies both filter values. The column description gives no way to identify individual related codes, so a child or relationship would require guessing.
+- candidate run-06 confusing [S8]: S8 uses the input coverage threshold of 100%, while the schema description says 70%. Both require the one selected table in this case.
+- candidate run-06 comment: S5 gives enough evidence to use family only as a row filter and retain the related codes as text.
+

@@ -1,7 +1,6 @@
 """Prompt Studio round-trips the default prompts exactly and scores agent test results."""
 
 import importlib.util
-import json
 from pathlib import Path
 from types import ModuleType
 
@@ -80,7 +79,9 @@ def test_fixtures_match_their_stage_inputs() -> None:
 
     assert fixtures
     for path in fixtures:
-        fixture = json.loads(path.read_text(encoding="utf-8"))
+        fixture = studio.read_fixture(path)
+        if path.parent.name == "mapping.one_shot.mapping_authoring":
+            assert fixture["values"]["mapping_basis"][0]["kind"] == "target"
         assert studio.fixture_problems(fixture, variables[path.parent.name]) == [], path.name
 
 

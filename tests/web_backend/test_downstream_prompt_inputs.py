@@ -278,6 +278,15 @@ def test_all_readers_accept_no_input_and_preserve_prompt_value_shapes(
     assert catalog.prompt_values == values
     for definition in catalog.definitions:
         page = catalog.invoke(definition.name, {})
+        if definition.name in {"get_mapping_basis", "get_validation_basis"}:
+            items = list(page["items"])
+            while page["next_cursor"] is not None:
+                page = catalog.invoke(definition.name, {"cursor": page["next_cursor"]})
+                items.extend(page["items"])
+            if definition.name == "get_mapping_basis":
+                assert items == values["mapping_basis"]
+            else:
+                assert any(item["kind"] == "target" for item in items)
         assert page["is_complete"] is True
         assert page["next_cursor"] is None
         assert page["incomplete_object_key"] is None

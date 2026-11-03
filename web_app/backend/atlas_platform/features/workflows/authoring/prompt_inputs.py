@@ -27,6 +27,7 @@ from pydantic import (
 )
 
 from atlas_platform.features.metadata_enrichment.contracts import EvidenceMethod
+from atlas_platform.prompt_rendering import referenced_prompt_names
 
 from .agent_execution import LocalAgentToolDefinition
 from .context import SelectedObjectContext
@@ -897,13 +898,17 @@ def project_prompt_input_values(
     resolver_values: Mapping[str, object],
     tool_definitions: tuple[LocalAgentToolDefinition, ...] = (),
     precomputed_values: Mapping[str, object] | None = None,
+    only_referenced: bool = False,
 ) -> dict[str, object]:
     """Add registered named inputs without changing legacy values or stage evidence."""
 
     values = dict(resolver_values)
     prompt_workflow = stage.prompt_workflow or plan.project_workflow
     requested: set[str] = set()
+    referenced = referenced_prompt_names(stage.templates) if only_referenced else None
     for variable in stage.variables:
+        if referenced is not None and variable.name not in referenced:
+            continue
         descriptor = get_prompt_input_contract(
             project_workflow=prompt_workflow,
             workflow_execution_mode=plan.workflow_execution_mode,
@@ -927,14 +932,30 @@ def project_prompt_input_values(
     prefix = f"workflow.{prompt_workflow}.common.{stage.stage_code}.inputs."
     new_inputs = workflow_input_contracts(stage_input_set(prompt_workflow, stage.stage_code))
     if prompt_workflow in {"mapping", "code_generation", "validation"}:
-        from .downstream_inputs import downstream_input_contracts, project_downstream_inputs
+        from .downstream_inputs import (
+            compact_mapping_basis,
+            downstream_input_contracts,
+            project_downstream_inputs,
+        )
 
         new_inputs = {
             name: {"schema": schema}
             for name, (schema, _, _) in downstream_input_contracts(prompt_workflow).items()
         }
         if precomputed_values is None and isinstance(context, dict) and requested:
-            precomputed_values = project_downstream_inputs(prompt_workflow, context)
+            precomputed_values = project_downstream_inputs(
+                prompt_workflow, context, include_mapping_basis=False
+            )
+        if (
+            prompt_workflow == "mapping"
+            and prefix + "mapping_basis" in requested
+            and precomputed_values is not None
+            and "mapping_basis" not in precomputed_values
+        ):
+            precomputed_values = {
+                **precomputed_values,
+                "mapping_basis": compact_mapping_basis(precomputed_values),
+            }
     if any(key == prefix + name for name in new_inputs for key in requested):
         from jsonschema import Draft202012Validator
 
