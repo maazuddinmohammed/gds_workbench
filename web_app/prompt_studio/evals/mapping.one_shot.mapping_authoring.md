@@ -92,3 +92,69 @@ Review notes:
 - candidate run-06 confusing [I1]: The final check requires transformation_logic in every document, although S4.1 defines that field only for Attribute documents.
 - candidate run-06 comment: S6 identifies which side of each join needs normalization. S7 and the Mapping Requirement specify the batch scope.
 
+## 2026-11-05 · `batch-parent-v1` · fixture `batch_parent_lookup` · 6 runs
+
+| Measure | baseline | candidate |
+|---|---|---|
+| Results returned | 3/3 | 3/3 |
+| Valid answers (schema) | 3/3 | 3/3 |
+| Expected items found | 18/18 (100%) | 18/18 (100%) |
+| Forbidden items returned | 0 | 0 |
+| Other items per valid answer | 0.0 | 0.0 |
+| Clarity (1–5) | 4.0 | 5.0 |
+| Confidence (1–5) | 3.3 | 5.0 |
+| Blockers cited | S5 ×3, S3 ×2, S4 ×1 | – |
+| Confusing cited | S5 ×3 | – |
+
+Suggested verdict: **same**
+
+Review notes:
+- baseline run-01 blocker [S3]: Depot is eligible but has no applied Mapping; modeled trimming and uppercasing alone do not establish an applied parent business-key lookup rule.
+- baseline run-01 blocker [S5]: The requirement names the current orchestration batch but provides no parameter binding; I left sample_query null rather than invent an executable filter.
+- baseline run-01 confusing [S5]: It is unclear whether a semantic current-orchestration-batch placeholder is permitted when no parameter binding is given, or whether the entire shared query must remain unresolved.
+- baseline run-01 comment: The optional detail predicate is complete and preserves dispatches without detail. Parent lineage gives intended normalization but explicitly lacks an applied Mapping, so neither role can be completed.
+- baseline run-02 blocker [S3]: Depot has no applied Mapping. Its proposed trim/uppercase lineage does not establish the applied parent key comparison required by S4; both depot roles remain unresolved.
+- baseline run-02 blocker [S5]: Current orchestration batch is required, but no parameter binding is supplied. The batch column cannot establish that binding, so the shared rowset is unresolved.
+- baseline run-02 confusing [S5]: Preserving an otherwise supported partial rowset is difficult when its required population lacks a parameter binding: an unfiltered query would return unsupported history, while null Object logic loses the supported optional detail join.
+- baseline run-02 comment: Supported Attribute expressions are retained with the intended driver and detail aliases; Object logic awaits the current-batch binding. The optional detail predicate is dispatch_no plus load_batch, with a left join; depot batch filtering is unsupported.
+- baseline run-03 blocker [S4]: Depot has no applied Mapping, so its modeled trim/uppercase lineage does not establish the applied parent business-key comparison for either role.
+- baseline run-03 blocker [S5]: The current orchestration batch is required, but no parameter binding is supplied; a batch column alone cannot establish that binding.
+- baseline run-03 confusing [S5]: Preserving a partial rowset when the required population binding is missing leaves uncertainty over how to represent a sample query that cannot yet enforce the population.
+- baseline run-03 comment: The optional detail join is supported by explicit same-batch lineage and uniqueness evidence. Depot physical lineage is explanatory and cannot replace the missing applied parent rule. The partial sample query requires resolution of the reported batch filter before execution.
+- candidate run-04 comment: S4 clearly allows parent lookup from modeled key lineage without an applied Mapping. S6 separates driving and detail batch restrictions from unrestricted parent lookup batches.
+- candidate run-05 comment: S3 and S4 permit lookup of the modeled Depot before its own Mapping exists. Its documented key normalization supplies the comparison rule; S6 keeps parent lookups independent of the incoming batch.
+- candidate run-06 comment: S3 and S4 permit the modeled parent key lineage to establish code normalization without an authored parent Mapping. S6 keeps the optional detail batch predicate in ON and leaves parent lookups unrestricted by batch.
+
+## 2026-11-05 · `batch-rollup-v1` · fixture `batch_rollup_lookup` · 6 runs
+
+| Measure | baseline | candidate |
+|---|---|---|
+| Results returned | 3/3 | 3/3 |
+| Valid answers (schema) | 3/3 | 3/3 |
+| Expected items found | 18/18 (100%) | 18/18 (100%) |
+| Forbidden items returned | 0 | 0 |
+| Other items per valid answer | 0.0 | 0.0 |
+| Clarity (1–5) | 3.7 | 5.0 |
+| Confidence (1–5) | 3.7 | 5.0 |
+| Blockers cited | S4 ×2, S5 ×2, S3 ×1 | – |
+| Confusing cited | S5 ×3, S6 ×1 | – |
+
+Suggested verdict: **same**
+
+Review notes:
+- baseline run-01 blocker [S4]: Both depot roles require an applied parent business key rule, but the eligible Depot source explicitly says no Mapping has been authored; modeled trim/uppercase lineage alone does not establish an applied lookup rule.
+- baseline run-01 confusing [S5]: The Context identifies the current orchestration batch but supplies no parameter binding syntax or name; :current_batch is used as a symbolic orchestration parameter.
+- baseline run-01 comment: The detail rollup is fully specified: filter POSTED first, sum without DISTINCT, and preserve missing totals as zero. The directory is lineage evidence and is not read by this partial rowset.
+- candidate run-02 comment: S4 permits Depot lookup before its Mapping exists, using the modeled canonical-key rule. S6 clearly separates current-batch Bronze processing from parent lookups across batches; the inline fallback expression fits the S5 projection shorthand.
+- baseline run-03 blocker [S3]: Depot has no authored or applied Mapping. Modeled uppercase/trim lineage alone does not supply the applied parent lookup contract required by S4.
+- baseline run-03 blocker [S5]: The current orchestration batch is required but no batch parameter or binding is supplied; inventing one is forbidden. The Object rowset remains unresolved.
+- baseline run-03 confusing [S5]: The prompt requires exact population and forbids inventing a parameter binding, but gives no convention for expressing a supplied current orchestration batch abstractly. It is unclear whether a symbolic batch placeholder is acceptable.
+- baseline run-03 confusing [S6]: Supported aggregate expressions depend on a shared CTE alias, but the shared rowset cannot be completed when the batch binding is missing. The partial-output rules do not specify how to represent that dependency.
+- baseline run-03 comment: The posted-line calculation itself is clear: sum quantity * unit_price - discount, preserve duplicate lines, and coalesce missing totals to zero before casting to STRING. Parent batch filtering is explicitly disallowed by the requirement that earlier depots remain eligible.
+- candidate run-04 comment: Parent key lineage supports canonicalizing child depot codes even without an authored parent Mapping. The requirement explicitly supplies aggregation, missing-total behavior and parent batch eligibility.
+- baseline run-05 blocker [S4]: Both depot roles need the eligible parent’s applied business-key rule, but I1 explicitly says no parent Mapping has been authored; modeled canonicalization alone cannot establish an applied lookup.
+- baseline run-05 blocker [S5]: Current orchestration batch is specified, but no parameter binding is supplied; I left sample_query null and reported the missing rowset rule.
+- baseline run-05 confusing [S5]: The instructions require a sample query while forbidding an invented parameter binding, but do not specify how to represent a supported batch-dependent partial rowset when that binding is absent.
+- baseline run-05 comment: The posted-line aggregation and zero fallback are explicit. Depot normalization lineage is available, but the required applied parent rule is not.
+- candidate run-06 comment: S4 and S6 support optional normalized parent lookups without restricting earlier parent batches. S6 and I1 establish the posted-line aggregation, batch binding and zero fallback clearly.
+

@@ -1,5 +1,6 @@
 """Gold keeps applied Logical and scoped physical evidence without widening inputs."""
 
+import json
 from copy import deepcopy
 from typing import Any, cast
 
@@ -20,6 +21,7 @@ from atlas_platform.features.workflows.authoring.downstream_inputs import (
     downstream_input_contracts,
     project_downstream_inputs,
 )
+from atlas_platform.features.workflows.authoring.plan import WorkflowExecutionMode
 from atlas_platform.prompt_rendering import PromptComponentTemplates
 from jsonschema import Draft202012Validator
 
@@ -32,6 +34,215 @@ from tests.mcp.project_test_fixtures import (
     snapshot_from_graph,
 )
 from tests.web_backend.mapping_fixtures import mapping_preparation
+
+
+@pytest.mark.parametrize("layer", ["logical", "dimensional"])
+@pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
+def test_parent_lookup_keeps_key_lineage_and_its_own_system_rules(
+    layer: str, mode: WorkflowExecutionMode
+) -> None:
+    preparation = mapping_preparation(
+        modeled_entity_type="logical_entity" if layer == "logical" else "dimensional_entity",
+        execution_mode=mode,
+    )
+    assert preparation.snapshot is not None
+    graph = {
+        name: [row.model_dump(mode="json") for row in rows]
+        for name, rows in project_snapshot_records(preparation.snapshot).items()
+    }
+    schema = "silver" if layer == "logical" else "gold"
+    prototype = preparation.context.target
+    parent = prototype.model_copy(
+        update={
+            "entity_id": 202,
+            "entity_name": "CustomerDirectory",
+            "attributes": (
+                prototype.attributes[0].model_copy(
+                    update={"attribute_name": "CustomerKey", "is_surrogate_key": True}
+                ),
+                prototype.attributes[0].model_copy(
+                    update={
+                        "attribute_id": 702,
+                        "attribute_name": "SourceCustomerID",
+                        "ordinal_position": 2,
+                        "is_natural_key": True,
+                    }
+                ),
+            ),
+        }
+    )
+    parent_record = deepcopy(graph[f"{layer}_entity"][0])
+    parent_record[f"{layer}_entity_name"] = "CustomerDirectory"
+    graph[f"{layer}_entity"].append(parent_record)
+    business_key = deepcopy(graph[f"{layer}_attribute"][0])
+    business_key.update(
+        {
+            f"{layer}_entity_name": "CustomerDirectory",
+            f"{layer}_attribute_name": "SourceCustomerID",
+            f"{layer}_attribute_is_natural_key": True,
+            f"{layer}_attribute_ordinal_position": 2,
+        }
+    )
+    # Its lineage belongs to the parent's System, outside this branch's eligible
+    # execution inputs. Preserve it as provenance without widening the source list.
+    if layer == "logical":
+        source_key = dict(parent_record["sources"][0]["source_object"])
+        source_key.update(system_code="ERP", object_name="directory_customer")
+        parent_record["sources"][0]["source_object"] = source_key
+        business_key["sources"][0]["source_attribute"] = {
+            **source_key,
+            "attribute_name": "customer_number",
+        }
+        graph["project_input_scope"].append(
+            {**source_key, "is_active": True, "project_input_scope_is_locked": False}
+        )
+    else:
+        directory = deepcopy(graph["logical_entity"][0])
+        directory["logical_entity_name"] = "DirectoryInput"
+        graph["logical_entity"].append(directory)
+        directory_key = deepcopy(graph["logical_attribute"][0])
+        directory_key["logical_entity_name"] = "DirectoryInput"
+        graph["logical_attribute"].append(directory_key)
+        parent_record["sources"][0]["source_logical_entity"]["logical_entity_name"] = (
+            "DirectoryInput"
+        )
+        business_key["sources"][0]["source_logical_attribute"]["logical_entity_name"] = (
+            "DirectoryInput"
+        )
+    returned_key = deepcopy(business_key)
+    returned_key.update(
+        {
+            f"{layer}_attribute_name": "CustomerKey",
+            f"{layer}_attribute_is_natural_key": False,
+            f"{layer}_attribute_is_surrogate_key": True,
+            f"{layer}_attribute_ordinal_position": 1,
+            "sources": [],
+        }
+    )
+    graph[f"{layer}_attribute"].extend((returned_key, business_key))
+    relationship = logical_relationship() if layer == "logical" else dimensional_relationship()
+    relationship.update(
+        {
+            f"from_{layer}_entity_schema_name": schema,
+            f"from_{layer}_entity_name": prototype.entity_name,
+            f"from_{layer}_attribute_name": "CustomerID",
+            f"to_{layer}_entity_schema_name": schema,
+            f"to_{layer}_entity_name": "CustomerDirectory",
+            f"to_{layer}_attribute_name": "CustomerKey",
+            f"{layer}_relationship_basis": "Look up the source customer number in ERP.",
+        }
+    )
+    graph[f"{layer}_relationship"] = [relationship]
+    mapping_identity = {
+        "modeled_entity_type": f"{layer}_entity",
+        "modeled_entity_schema_name": schema,
+        "modeled_entity_name": "CustomerDirectory",
+        "source_system_code": "ERP",
+        "output_template_code": None,
+    }
+    graph["mapping_object"] = [
+        {
+            **mapping_identity,
+            "object_dependency_order": 0,
+            "mapping_transformation_document": {"custom_rule": "ERP owns this directory."},
+            "object_mapping_status": "active",
+            "object_mapping_is_locked": False,
+        }
+    ]
+    graph["mapping_attribute"] = [
+        {
+            **mapping_identity,
+            "modeled_attribute_name": "SourceCustomerID",
+            "attribute_mapping_transformation_document": {"custom_rule": "Keep the exact number."},
+            "attribute_mapping_status": "active",
+            "attribute_mapping_is_locked": False,
+        }
+    ]
+    for index in range(60):
+        for dataset, field in (
+            ("mapping_object", "mapping_transformation_document"),
+            ("mapping_attribute", "attribute_mapping_transformation_document"),
+        ):
+            graph[dataset].append(
+                {
+                    **graph[dataset][0],
+                    "source_system_code": f"OTHER_{index}",
+                    field: {"custom_rule": "Wide foreign-System rule. " * 80},
+                }
+            )
+    agent_plan = preparation.plan.agent_plan
+    stage = agent_plan.stages[0].model_copy(
+        update={
+            "templates": PromptComponentTemplates(system="Map.", instruction="{{ mapping_basis }}")
+        }
+    )
+    preparation = preparation.model_copy(
+        update={
+            "snapshot": snapshot_from_graph(cast(Any, graph)),
+            "context": preparation.context.model_copy(
+                update={
+                    "sources": (
+                        *preparation.context.sources,
+                        MappingSource(
+                            source_mapping_id=None,
+                            modeled_entity_id=prototype.entity_id,
+                            role="lookup",
+                            rationale="Modeled relationship parent.",
+                            is_locked=False,
+                            object=parent,
+                        ),
+                    )
+                }
+            ),
+            "plan": preparation.plan.model_copy(
+                update={"agent_plan": agent_plan.model_copy(update={"stages": (stage,)})}
+            ),
+        }
+    )
+    execution = build_mapping_execution_context(preparation=preparation, execution_mode=mode)
+    if mode == "tool_assisted":
+        assert isinstance(execution.tool_catalog, DownstreamContextReaders)
+        cards = execution.tool_catalog.invoke("get_mapping_basis", {})["items"]
+    else:
+        cards = cast(dict[str, Any], execution.embedded_context)["values"]["mapping_basis"]
+    key = next(
+        card["record"]
+        for card in cards
+        if card["kind"] == f"source_{layer}_attribute"
+        and card["record"][f"{layer}_entity_name"] == "CustomerDirectory"
+        and card["record"][f"{layer}_attribute_name"] == "SourceCustomerID"
+    )
+    assert key[f"{layer}_attribute_is_natural_key"] is True
+    assert key["sources"] == business_key["sources"]
+    assert not any(
+        card["kind"] == "source"
+        and card["record"].get("entity_name", card["record"].get("object_name"))
+        in {"DirectoryInput", "directory_customer"}
+        for card in cards
+    )
+    assert any(
+        card["kind"] == "source_attribute_mapping"
+        and card["record"]["source_system_code"] == "ERP"
+        and card["record"]["modeled_entity_name"] == "CustomerDirectory"
+        for card in cards
+    )
+    assert len(json.dumps(cards)) < 25_000
+    assert "Wide foreign-System rule" not in json.dumps(cards)
+    parent_card = next(
+        card["record"]
+        for card in cards
+        if card["kind"] == "source" and card["record"].get("entity_name") == "CustomerDirectory"
+    )
+    assert set(parent_card["deferred_mapping_systems"]) == {f"OTHER_{index}" for index in range(60)}
+    if mode == "tool_assisted":
+        assert isinstance(execution.tool_catalog, DownstreamContextReaders)
+        page = execution.tool_catalog.invoke("get_mapping_basis", {"candidate_refs": [parent_card["ref"]]})
+        details = list(page["items"])
+        while page["next_cursor"]:
+            page = execution.tool_catalog.invoke("get_mapping_basis", {"cursor": page["next_cursor"]})
+            details.extend(page["items"])
+        assert any("Wide foreign-System rule" in json.dumps(card) for card in details)
+        assert len([card for card in details if card["kind"] == "source_attribute_mapping"]) == 61
 
 
 def test_gold_support_records_keep_upstream_documents_lineage_and_page_completely() -> None:

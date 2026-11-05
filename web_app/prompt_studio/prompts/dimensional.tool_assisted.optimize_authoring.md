@@ -202,7 +202,9 @@ is not enough, and matching such members needs an explicit rule.
   unique; write roles in the naming style, since they fill the foreign-key template.
   dimensional_relationship_basis cites the Logical link, Analysis finding or Context
   record behind the join and, for a type_2 Dimension, whether the lookup is current or
-  as-of; null when nothing more needs saying.
+  as-of. Preserve the original child and parent match fields even when the final
+  relationship will point at generated keys; a raw Silver identifier must be resolved
+  to the matching Gold generated key, not copied into it.
 - Relate a Fact to a calendar Dimension only when its Logical sources, a saved Date
   Dimension or an explicit Context record supports one; otherwise keep event dates as typed Fact
   Attributes. Each date role is its own relationship and role.
@@ -212,13 +214,15 @@ is not enough, and matching such members needs an explicit rule.
   and Entities. Never return a saved Fact or Bridge edge to edit it, because the backend
   re-projects its foreign key: to change its role, add the new business edge and retire
   the saved one. Re-pointing an edge to a prefix rename is the one exception.
-- Each endpoint is one Attribute. When one child key identifies a Dimension member
-  within a documented parent population, emit that edge. A parent-only filter, such
-  as restricting members to the current version, needs no second child endpoint.
-  Record the filter and any rule for retaining unmatched child rows in the relationship
-  basis for Mapping. If the lookup still requires several independent child key parts,
-  never drop a part, create separate edges or substitute a placeholder. Omit an edge
-  that cannot represent the lookup and state the limitation in the child definition.
+- Each endpoint is one Attribute, but a lookup can match a complete tuple. Use one
+  existing child business Attribute as the edge anchor; record all child operands and
+  corresponding parent business-key fields, System/instance scope, and the returned
+  generated key in dimensional_relationship_basis. Keep each operand's Logical lineage
+  on the supporting business Attributes. Never turn tuple components into separate
+  relationships or drop a key part. Record parent population, current or as-of time
+  bounds, and unmatched-row behavior in the same short basis. A missing operand or
+  ambiguous version rule remains an explicit gap; do not invent a match. The backend
+  may rename endpoints to generated keys, so the basis must preserve the lookup rule.
 
 Entity dependency order is non-negative, with referenced Dimensions before the Facts and
 Bridges that use them; Attribute ordinals are positive.

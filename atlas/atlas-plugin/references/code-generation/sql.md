@@ -29,7 +29,7 @@ Mapping carries Object dependency order; no order property belongs on a Code rec
 
 ## Runtime parameters and optional preflight
 
-Use only Mapping's confirmed runtime parameters and population rules. The existing batch placeholder example is `wid_GDSBatchID`; it is not a universal required filter. Keep production placeholders in generated content. Never substitute profiling batch selections, create an automatic latest-batch rule or filter an entire historical lookup merely because it has a batch column.
+The standard runtime replaces the literal numeric token `wid_GDSBatchID` before SQL execution. Preserve it bare in Mapping's batch predicates, without widget declarations, `:batch_id` or `${...}` syntax. The runtime sets the catalog; never qualify a relation with a catalog or emit USE CATALOG. Keep the driving batch restriction and same-load Bronze batch equality in their mapped positions. Parent Silver/Gold lookups can resolve older-loaded rows; their key/version rules remain independent. Never substitute profiling selections or invent latest-per-key, filters on unbatched inputs, or new business rules.
 
 Static review is the default. If a permitted execution probe is useful, follow [query scope](../query-scope.md): authorized Connection/environment, actual evidence coordinates, masking, approved row/batch scope, bounds and exact evidence recording. Keep concrete test substitutions and diagnostic queries separate from the production artifact; describe any scope difference. SQL Never permits generation and static review, not execution.
 

@@ -123,7 +123,9 @@ def reader_definitions(
                     ]
                 }
             if selector.endswith("_names") or selector in {
-                "context_record_ids", "candidate_refs", "detail_refs",
+                "context_record_ids",
+                "candidate_refs",
+                "detail_refs",
             }:
                 key_schema = {"type": "string", "minLength": 1, "pattern": r"\S"}
             properties[selector] = (
@@ -144,7 +146,8 @@ def reader_definitions(
             description = (
                 "Read frozen Mapping evidence. Start with {} for the target, fields, supporting "
                 "sources, relevant lookup evidence and the remaining eligible source headers. "
-                "When a rule calls for a deferred source, pass its exact ref in candidate_refs "
+                "When a rule calls for a deferred source or a source lists "
+                "deferred_mapping_systems, pass its exact ref in candidate_refs "
                 "to read its columns, lineage and upstream Mapping. Unknown or ineligible "
                 "refs fail. Continue each selection with its returned cursor alone."
             )
@@ -153,7 +156,7 @@ def reader_definitions(
                 "Read deferred sources by exact ref only when needed."
             )
             properties["candidate_refs"]["description"] = (
-                "Exact ref values from candidate source headers, e.g. s7."
+                "Exact ref values from source headers, e.g. s7."
             )
         if name == "get_code_sources":
             description = (
@@ -236,7 +239,9 @@ def reader_definitions(
             "$defs": schema.get("$defs", {}),
         }
         if variable not in {
-            "object_attribute_context", "object_relationship_context", "source_metadata"
+            "object_attribute_context",
+            "object_relationship_context",
+            "source_metadata",
         }:
             result_schema["properties"]["incomplete_object_key"] = {"type": "null"}
         result_schema["allOf"] = [

@@ -11,13 +11,14 @@ from typing import LiteralString, Protocol
 from uuid import UUID, uuid4
 
 from atlas_mcp.domain.errors import DependencyUnavailableError, InvalidRequestError
+from psycopg.types.json import Jsonb
+
 from atlas_platform.capabilities import MAX_AGENT_REQUESTS, MAX_AUTHORING_ATTEMPTS
 from atlas_platform.features.workflows.authoring.lifecycle import (
     LifecycleTransaction,
     workflow_identity_triple,
 )
 from atlas_platform.features.workflows.execution.contracts import WorkflowExecutionClaim
-from psycopg.types.json import Jsonb
 
 from .contracts import FoundryModelPricing, ModelRequestRecorder, ModelTokenUsage
 

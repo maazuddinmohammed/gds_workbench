@@ -138,7 +138,7 @@ SELECT run.workflow_run_id,
 # Modeled records keep a boolean lifecycle; Mapping context shows it as a status label.
 _MAPPING_TARGET_NODES_SQL: LiteralString = """
 SELECT jsonb_build_object('modeled_entity_id', entity.modeled_entity_id,
- 'dependency_order', coalesce(min(mapping.object_dependency_order), entity.dependency_order),
+ 'dependency_order', greatest(max(mapping.object_dependency_order), entity.dependency_order),
  'status', CASE WHEN entity.is_active THEN 'active' ELSE 'inactive' END,
  'has_locked_headers', coalesce(bool_or(mapping.object_mapping_is_locked), false),
  'has_unlocked_headers', coalesce(bool_or(NOT mapping.object_mapping_is_locked), false)) AS node
@@ -150,6 +150,43 @@ SELECT jsonb_build_object('modeled_entity_id', entity.modeled_entity_id,
  WHERE entity.project_id = %s AND entity.modeled_entity_type = %s AND entity.is_active
  GROUP BY entity.modeled_entity_id, entity.dependency_order, entity.is_active
  ORDER BY entity.modeled_entity_id
+"""
+
+_MAPPING_TARGET_EDGES_SQL: LiteralString = """
+WITH selected_scope AS (SELECT %s::BIGINT AS project_id, %s::TEXT AS entity_type),
+relationships AS (
+ SELECT project_id, 'logical_entity'::TEXT AS entity_type,
+        logical_relationship_from_entity_id AS child_id,
+        logical_relationship_to_entity_id AS parent_id,
+        logical_relationship_from_attribute_id AS child_attribute_id,
+        logical_relationship_to_attribute_id AS parent_attribute_id
+ FROM workflow.logical_relationship WHERE logical_relationship_is_active
+ UNION ALL
+ SELECT project_id, 'dimensional_entity'::TEXT,
+        dimensional_relationship_from_entity_id, dimensional_relationship_to_entity_id,
+        dimensional_relationship_from_attribute_id, dimensional_relationship_to_attribute_id
+ FROM workflow.dimensional_relationship WHERE dimensional_relationship_is_active
+)
+SELECT DISTINCT jsonb_build_object(
+ 'predecessor_modeled_entity_id', relation.parent_id,
+ 'successor_modeled_entity_id', relation.child_id) AS edge
+ FROM relationships AS relation JOIN selected_scope AS scope
+   ON scope.project_id = relation.project_id AND scope.entity_type = relation.entity_type
+ JOIN workflow.modeled_entity AS child ON child.project_id = scope.project_id
+   AND child.modeled_entity_type = scope.entity_type
+   AND child.modeled_entity_id = relation.child_id AND child.is_active
+ JOIN workflow.modeled_entity AS parent ON parent.project_id = scope.project_id
+   AND parent.modeled_entity_type = scope.entity_type
+   AND parent.modeled_entity_id = relation.parent_id AND parent.is_active
+ JOIN workflow.modeled_attribute AS child_attribute ON child_attribute.project_id = scope.project_id
+   AND child_attribute.modeled_entity_type = scope.entity_type
+   AND child_attribute.modeled_attribute_id = relation.child_attribute_id
+   AND child_attribute.is_active
+ JOIN workflow.modeled_attribute AS parent_attribute
+   ON parent_attribute.project_id = scope.project_id
+   AND parent_attribute.modeled_entity_type = scope.entity_type
+   AND parent_attribute.modeled_attribute_id = relation.parent_attribute_id
+   AND parent_attribute.is_active
 """
 
 _MAPPING_ENTITY_CONTEXT_SQL: LiteralString = """
@@ -190,7 +227,7 @@ SELECT jsonb_build_object('modeled_entity_id', entity.modeled_entity_id,
  'attribute_id', item.modeled_attribute_id, 'attribute_name', item.attribute_name,
  'attribute_definition', item.definition, 'attribute_data_type', item.data_type,
  'is_nullable', item.is_nullable, 'ordinal_position', item.ordinal_position,
- 'is_surrogate_key', item.is_surrogate_key,
+ 'is_surrogate_key', item.is_surrogate_key, 'is_natural_key', item.is_natural_key,
  'is_audit_column', item.is_audit_column,
  'status', CASE WHEN item.is_active THEN 'active' ELSE 'inactive' END, 'is_locked', item.is_locked)
      ORDER BY item.ordinal_position, item.modeled_attribute_id), '[]'::JSONB) AS items FROM
@@ -213,8 +250,8 @@ SELECT jsonb_build_object('modeled_entity_id', entity.modeled_entity_id,
  ) AS mapping_attributes
 """
 
-# Input Scope contains Source/Bronze. Silver sources instead require an applied
-# Logical Entity and Mapping; Project ownership remains independent of physical placement.
+# Input Scope contains Source/Bronze. Modeled sources are selected by governed
+# eligibility; Project ownership remains independent of physical placement.
 _MAPPING_PHYSICAL_SOURCE_CONTEXT_SQL: LiteralString = """
 SELECT jsonb_build_object(
            'source_mapping_id', source.source_mapping_id,
@@ -313,7 +350,7 @@ SELECT jsonb_build_object(
  'attribute_id', item.modeled_attribute_id, 'attribute_name', item.attribute_name,
  'attribute_definition', item.definition, 'attribute_data_type', item.data_type,
  'is_nullable', item.is_nullable, 'ordinal_position', item.ordinal_position,
- 'is_surrogate_key', item.is_surrogate_key,
+ 'is_surrogate_key', item.is_surrogate_key, 'is_natural_key', item.is_natural_key,
  'is_audit_column', item.is_audit_column,
  'status', CASE WHEN item.is_active THEN 'active' ELSE 'inactive' END, 'is_locked', item.is_locked
  ) ORDER BY item.ordinal_position, item.modeled_attribute_id), '[]'::JSONB) AS items
@@ -360,9 +397,12 @@ SELECT DISTINCT template_id AS output_template_id
    AND attribute.attribute_mapping_status = 'active'
  CROSS JOIN LATERAL unnest(ARRAY[mapping.output_template_id, attribute.output_template_id])
     AS template(template_id)
- WHERE mapping.project_id = %s AND mapping.modeled_entity_type = 'logical_entity'
-   AND mapping.logical_entity_id = ANY(%s::BIGINT[])
-   AND mapping.source_system_id = %s AND mapping.object_mapping_status = 'active'
+ WHERE mapping.project_id = %s
+   AND ((mapping.modeled_entity_type = 'logical_entity'
+         AND mapping.logical_entity_id = ANY(%s::BIGINT[]))
+        OR (mapping.modeled_entity_type = 'dimensional_entity'
+            AND mapping.dimensional_entity_id = ANY(%s::BIGINT[])))
+   AND mapping.object_mapping_status = 'active'
    AND template_id IS NOT NULL
  ORDER BY template_id
 """
@@ -567,6 +607,10 @@ class PostgresMappingRunContextRepository:
             _MAPPING_TARGET_NODES_SQL,
             (plan.project_id, plan.modeled_entity_type),
         )
+        target_edge_rows = await transaction.fetch_all(
+            _MAPPING_TARGET_EDGES_SQL,
+            (plan.project_id, plan.modeled_entity_type),
+        )
         try:
             parsed_header = ExistingMappingHeader.model_validate(
                 header.get("header"),
@@ -580,6 +624,12 @@ class PostgresMappingRunContextRepository:
                 for source in sources
                 if isinstance(source.object, MappingModeledEntity)
                 and source.object.entity_type == "logical_entity"
+            ]
+            dimensional_ids = [
+                source.object.entity_id
+                for source in sources
+                if isinstance(source.object, MappingModeledEntity)
+                and source.object.entity_type == "dimensional_entity"
             ]
             upstream_physical_rows = (
                 await transaction.fetch_all(
@@ -609,10 +659,10 @@ class PostgresMappingRunContextRepository:
                 for item in parsed_header.attribute_mappings
                 if item.output_template_id is not None
             )
-            if logical_ids:
+            if logical_ids or dimensional_ids:
                 upstream_template_rows = await transaction.fetch_all(
                     _MAPPING_UPSTREAM_TEMPLATE_IDS_SQL,
-                    (plan.project_id, logical_ids, plan.pair.source_system_id),
+                    (plan.project_id, logical_ids, dimensional_ids),
                 )
                 referenced_template_ids.update(
                     row["output_template_id"] for row in upstream_template_rows
@@ -652,7 +702,7 @@ class PostgresMappingRunContextRepository:
                     "source_system": anchor.get("source_system"),
                     "target_dependency_graph": {
                         "nodes": [row.get("node") for row in target_node_rows],
-                        "edges": [],
+                        "edges": [row.get("edge") for row in target_edge_rows],
                         "malformed_reference_count": 0,
                         "mixed_order_target_count": 0,
                     },

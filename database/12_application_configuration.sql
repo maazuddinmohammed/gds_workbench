@@ -2239,6 +2239,15 @@ AS $list_code_generation_target_context$
          WHERE EXISTS (SELECT 1 FROM active_mapping AS mapping WHERE mapping.project_id = target.project_id
            AND mapping.modeled_entity_type = target.modeled_entity_type
            AND coalesce(mapping.logical_entity_id,mapping.dimensional_entity_id) = target.modeled_entity_id)
+    ), lookup_namespaces AS MATERIALIZED (
+        -- Namespace values belong to the eligible parent, independently of the
+        -- child's contributing/assigned Systems. A value is not a join rule.
+        SELECT branch.modeled_entity_id, branch.source_system_id
+          FROM workflow.list_mapping_branches(p_project_id, p_modeled_entity_type) AS branch
+        UNION
+        SELECT coalesce(mapping.logical_entity_id,mapping.dimensional_entity_id),
+               mapping.source_system_id
+          FROM active_mapping AS mapping
     ), cited_context AS MATERIALIZED (
         -- Context a target Entity or one of its active Attributes cites as support.
         SELECT s.logical_entity_id AS modeled_entity_id, s.context_record_id
@@ -2417,9 +2426,22 @@ AS $list_code_generation_target_context$
             'selected_source_system_id',m.source_system_id,'source_mapping_id',source.source_mapping_id,
             'role',source.role,'rationale',source.rationale,'is_locked',source.is_locked,
             'object',CASE WHEN source.source_object_id IS NOT NULL THEN physical.document ELSE modeled.document END
-          ) ORDER BY lower(m.source_system_code),m.source_system_id,source.source_object_id,source.source_logical_entity_id,source.source_dimensional_entity_id),'[]'::JSONB) AS documents
+          ) || CASE WHEN source.role = 'lookup'
+                    THEN jsonb_build_object('source_system_bindings',namespace.documents)
+                    ELSE '{}'::JSONB END
+            ORDER BY lower(m.source_system_code),m.source_system_id,source.source_object_id,source.source_logical_entity_id,source.source_dimensional_entity_id),'[]'::JSONB) AS documents
           FROM active_mapping AS m
           CROSS JOIN LATERAL workflow.list_mapping_source_objects(m.project_id,target.modeled_entity_id,target.modeled_entity_type,m.source_system_id) AS source
+          CROSS JOIN LATERAL (
+            SELECT coalesce(jsonb_agg(jsonb_build_object(
+              'system_code',origin.system_code,'system_name',origin.system_name,
+              'source_system_value',origin.system_id
+            ) ORDER BY lower(origin.system_code),origin.system_id),'[]'::JSONB) AS documents
+              FROM lookup_namespaces AS binding
+              JOIN core.system AS origin ON origin.system_id = binding.source_system_id AND origin.is_active
+             WHERE source.role = 'lookup'
+               AND binding.modeled_entity_id = coalesce(source.source_logical_entity_id,source.source_dimensional_entity_id)
+          ) AS namespace
           LEFT JOIN LATERAL (
             SELECT jsonb_build_object(
               'object_id',o.object_id,'source_tenant_id',o.source_tenant_id,'tenant_id',t.tenant_id,

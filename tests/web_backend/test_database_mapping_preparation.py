@@ -48,13 +48,14 @@ def test_mapping_preparation_queries_compile_against_disposable_postgres(
             ),
         ),
         (_sql("_MAPPING_TARGET_NODES_SQL"), (18, "logical_entity")),
+        (_sql("_MAPPING_TARGET_EDGES_SQL"), (18, "logical_entity")),
         (_sql("_MAPPING_ENTITY_CONTEXT_SQL"), (18, 501, "logical_entity", 31)),
         (
             _sql("MAPPING_SOURCE_CONTEXT_SQL"),
             (18, 501, "logical_entity", 31),
         ),
         (_sql("_MAPPING_UPSTREAM_PHYSICAL_CONTEXT_SQL"), (501, 18, 18, 31)),
-        (_sql("_MAPPING_UPSTREAM_TEMPLATE_IDS_SQL"), (18, [401, 402], 31)),
+        (_sql("_MAPPING_UPSTREAM_TEMPLATE_IDS_SQL"), (18, [401, 402], [501])),
         (_sql("_MAPPING_OUTPUT_TEMPLATE_CONTEXT_SQL"), ([801, 802],)),
     )
 

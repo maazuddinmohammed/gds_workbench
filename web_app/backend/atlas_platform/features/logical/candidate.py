@@ -40,6 +40,7 @@ from atlas_mcp.domain.modeling_records import (
 from atlas_mcp.domain.snapshots.project import LogicalSection, ProjectChangeSetDataset
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 
+from atlas_platform.features.workflows.authoring.dependency_order import resolve_dependency_orders
 from atlas_platform.features.workflows.authoring.repair import (
     MAX_COVERAGE_SOURCE_REFS,
     AgentCandidateValidation,
@@ -586,7 +587,12 @@ class LogicalCandidateValidator:
             self._validate_entity_evidence(
                 record,
                 unchanged_applied=(
-                    existing is not None and merged == existing.model_dump(mode="json")
+                    existing is not None
+                    and {
+                        **merged,
+                        "logical_entity_dependency_order": existing.logical_entity_dependency_order,
+                    }
+                    == existing.model_dump(mode="json")
                 ),
                 index=index,
                 issues=issues,
@@ -644,6 +650,8 @@ class LogicalCandidateValidator:
         if draft.issues:
             return None, tuple(draft.issues)
         self._order_entities(draft)
+        if draft.issues:
+            return None, tuple(draft.issues)
 
         candidate_records: dict[str, list[dict[str, object]]] = {}
         paths: dict[_Path, _Path] = {}
@@ -1138,11 +1146,16 @@ class LogicalCandidateValidator:
                 )
 
     def _order_entities(self, draft: _Draft) -> None:
-        """Parents first: a listed Entity sits one above its highest parent.
-
-        A saved Entity keeps a saved order that already satisfies this. Entities in a cycle keep
-        their saved order, or zero.
-        """
+        """Raise parent-before-child orders, including saved children of new links."""
+        entities = {
+            key: record.model_dump(mode="json") for key, record in self._applied_entities.items()
+        }
+        entities.update(draft.records["logical_entity"])
+        orders = {
+            key: int(record["logical_entity_dependency_order"])
+            for key, record in entities.items()
+            if record["logical_entity_is_active"]
+        }
         relationships = {
             key: (key[:2], _to_entity_key(record))
             for key, record in self._applied_relationships.items()
@@ -1159,34 +1172,35 @@ class LogicalCandidateValidator:
                 )
             else:
                 relationships.pop(key, None)
-        parents: dict[_Key, set[_Key]] = {}
-        children: dict[_Key, set[_Key]] = {}
-        for child, parent in relationships.values():
-            if child != parent:
-                parents.setdefault(child, set()).add(parent)
-                children.setdefault(parent, set()).add(child)
-        orders = {
-            key: record.logical_entity_dependency_order
-            for key, record in self._applied_entities.items()
+        affected = set(draft.records["logical_entity"]) | {
+            key[:2] for key in draft.records["logical_relationship"]
         }
-        nodes = {*orders, *draft.records["logical_entity"], *parents, *children}
-        waiting = {key: len(parents.get(key, ())) for key in nodes}
-        ready = [key for key, count in waiting.items() if count == 0]
-        while ready:
-            key = ready.pop()
-            if key in draft.listed_entities:
-                required = 1 + max(
-                    (orders.get(parent, 0) for parent in parents.get(key, ())), default=-1
+        resolved, _ = resolve_dependency_orders(
+            orders, relationships.values(), targets=affected, include_dependents=True
+        )
+        # Self and cyclic associations remain valid model evidence. Mapping
+        # readiness reports that their loads need an explicit execution strategy.
+        for key, order in resolved.items():
+            if order == orders[key]:
+                continue
+            record = entities[key]
+            if record["logical_entity_is_locked"]:
+                draft.problem(
+                    "candidate.record_locked",
+                    ("relationships",),
+                    "A locked Logical Entity needs a higher dependency order "
+                    "for its parent lookup.",
                 )
-                orders[key] = max(orders.get(key, 0), required)
-            for child in children.get(key, ()):
-                waiting[child] -= 1
-                if waiting[child] == 0:
-                    ready.append(child)
-        for key in draft.listed_entities:
-            draft.records["logical_entity"][key]["logical_entity_dependency_order"] = orders.get(
-                key, 0
-            )
+                continue
+            if key in draft.records["logical_entity"]:
+                draft.records["logical_entity"][key]["logical_entity_dependency_order"] = order
+            else:
+                draft.add(
+                    "logical_entity",
+                    key,
+                    {**record, "logical_entity_dependency_order": order},
+                    ("relationships",),
+                )
 
     def _current(self, dataset: str, draft: _Draft, key: _Key) -> dict[str, object] | None:
         """The record as this answer leaves it: listed, else saved."""

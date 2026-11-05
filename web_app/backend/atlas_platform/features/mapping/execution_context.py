@@ -302,7 +302,7 @@ def build_mapping_execution_context(
     ):
         raise AgentContextTooLargeError()
     pair = _MappingPairBasis(preparation, values)
-    if pair.deferred or only_pair_inputs:
+    if pair.deferred or pair.has_lookups or only_pair_inputs:
         values["mapping_basis"] = pair.cards(pair.focus or set(pair.sources))
     embedded = cast(JsonValue, {"__gds_downstream_inputs__": "mapping", "values": values})
     if execution_mode == "tool_assisted":
@@ -315,7 +315,7 @@ def build_mapping_execution_context(
             max_page_records=selected_limits.max_tool_page_records,
             max_cumulative_result_bytes=selected_limits.max_tool_transcript_bytes,
         )
-        if pair.deferred:
+        if pair.deferred or pair.has_lookups:
             # Cursors can request the same selection over many pages. Cache only the last
             # selection so arbitrary combinations cannot grow the retained result set.
             catalog.mapping_pair_pages = lru_cache(maxsize=1)(pair.read)
@@ -353,6 +353,7 @@ class _MappingPairBasis:
             key=lambda pair: priority[pair[0].role],
         )
         self.sources = {f"s{i}": pair for i, pair in enumerate(ordered, 1)}
+        self.has_lookups = any(source.role == "lookup" for source, _ in self.sources.values())
         self.focus = {ref for ref, (source, _) in self.sources.items() if source.role == "support"}
         self.deferred: set[str] = set()
         self.join_summaries: list[dict[str, Any]] = []
@@ -539,7 +540,9 @@ class _MappingPairBasis:
         context = self.preparation.context.model_copy(update={"sources": sources})
         return self.preparation.model_copy(update={"context": context})
 
-    def cards(self, refs: set[str]) -> list[dict[str, Any]]:
+    def cards(
+        self, refs: set[str], *, include_mapping_details: bool = False
+    ) -> list[dict[str, Any]]:
         scoped = self.scoped(refs)
         ordered = [ref for ref in self.sources if ref in refs]
         support = _mapping_support(scoped)
@@ -551,6 +554,94 @@ class _MappingPairBasis:
             },
             source_refs=ordered,
         )
+        if not include_mapping_details and self.has_lookups:
+            lookups = {
+                (
+                    source.object.entity_type,
+                    source.object.entity_schema_name.casefold(),
+                    source.object.entity_name.casefold(),
+                ): (ref, source.object)
+                for ref, (source, _) in self.sources.items()
+                if ref in refs
+                and source.role == "lookup"
+                and isinstance(source.object, MappingModeledEntity)
+            }
+            # The core carries only lookup key rules for this branch or a namespace
+            # named by its saved evidence. Other Systems and non-key fields remain
+            # available by the same source ref; their documents can be arbitrarily wide.
+            namespace_evidence = json.dumps(
+                [
+                    support["modeled_relationships"],
+                    support["attribute_lineage"],
+                    support["context_records"],
+                    self.values["existing_mapping"],
+                    self.preparation.context.target.entity_definition,
+                    *(a.attribute_definition for a in self.preparation.context.target.attributes),
+                ],
+                ensure_ascii=False,
+            ).casefold()
+            deferred_systems: dict[str, set[str]] = {}
+            kept: list[dict[str, Any]] = []
+            for card in cards:
+                row = card["record"]
+                if card["kind"] not in {"source_object_mapping", "source_attribute_mapping"}:
+                    kept.append(card)
+                    continue
+                identity = (
+                    row["modeled_entity_type"],
+                    row["modeled_entity_schema_name"].casefold(),
+                    row["modeled_entity_name"].casefold(),
+                )
+                if identity not in lookups:
+                    kept.append(card)
+                    continue
+                ref, parent = lookups[identity]
+                system = row["source_system_code"]
+                named_system = system.casefold() == (
+                    self.preparation.context.source_system.system_code.casefold()
+                ) or re.search(rf"(?<!\w){re.escape(system.casefold())}(?!\w)", namespace_evidence)
+                key_fields = {
+                    attribute.attribute_name.casefold()
+                    for attribute in parent.attributes
+                    if attribute.is_natural_key
+                    or attribute.is_surrogate_key
+                    or attribute.attribute_name.casefold() == "sourcesystemid"
+                    or re.search(
+                        rf"(?<!\w){re.escape(attribute.attribute_name.casefold())}(?!\w)",
+                        namespace_evidence,
+                    )
+                }
+                for relationship in support["modeled_relationships"]:
+                    layer = parent.entity_type.removesuffix("_entity")
+                    if (
+                        relationship[f"to_{layer}_entity_schema_name"].casefold(),
+                        relationship[f"to_{layer}_entity_name"].casefold(),
+                    ) == identity[1:]:
+                        key_fields.add(relationship[f"to_{layer}_attribute_name"].casefold())
+                if named_system and (
+                    card["kind"] == "source_object_mapping"
+                    or row["modeled_attribute_name"].casefold() in key_fields
+                ):
+                    kept.append(card)
+                else:
+                    deferred_systems.setdefault(ref, set()).add(system)
+            used_templates = {
+                card["record"]["output_template_code"].casefold()
+                for card in kept
+                if card["kind"] in {"source_object_mapping", "source_attribute_mapping"}
+                and card["record"].get("output_template_code") is not None
+            }
+            cards = [
+                card
+                for card in kept
+                if card["kind"] != "source_mapping_template"
+                or card["record"]["code"].casefold() in used_templates
+            ]
+            for card in cards:
+                if card["kind"] == "source" and card["record"].get("ref") in deferred_systems:
+                    card["record"]["deferred_mapping_systems"] = sorted(
+                        deferred_systems[card["record"]["ref"]], key=str.casefold
+                    )
         if refs == self.focus:
             cards.extend(self.source_directory(set(self.join_details)))
             cards.extend(self.join_summaries)
@@ -562,13 +653,13 @@ class _MappingPairBasis:
     def read(self, selection: tuple[str, ...]) -> list[dict[str, Any]]:
         if selection:
             refs = set(selection)
-            if not refs <= self.deferred:
+            if not refs <= self.sources.keys():
                 raise KeyError("unknown source reference")
             # Include this selection's upstream Mapping, lineage and profiles.
             # Target/field/role instructions were already supplied on the core pages.
             details = [
                 card
-                for card in self.cards(refs)
+                for card in self.cards(refs, include_mapping_details=True)
                 if card["kind"] not in {"target", "field", "target_relationship"}
             ]
             for ref in dict.fromkeys(selection):
@@ -696,6 +787,12 @@ def _mapping_support(preparation: MappingPreparation) -> dict[str, Any]:
         if isinstance(item.object, MappingModeledEntity)
         and item.object.entity_type == "logical_entity"
     }
+    dimensional_keys = {
+        (item.object.entity_schema_name.casefold(), item.object.entity_name.casefold())
+        for item in preparation.context.sources
+        if isinstance(item.object, MappingModeledEntity)
+        and item.object.entity_type == "dimensional_entity"
+    }
     # Context the target cites as support reaches the prompt whatever its Type.
     cited_context = {
         source.context_record.context_record_id
@@ -714,6 +811,19 @@ def _mapping_support(preparation: MappingPreparation) -> dict[str, Any]:
             upstream.logical_entity_schema_name.casefold(),
             upstream.logical_entity_name.casefold(),
         ) in logical_keys:
+            cited_context.update(
+                source.context_record.context_record_id
+                for source in upstream.sources
+                if source.is_active and source.support_source_type == "context_record"
+            )
+    for upstream in (
+        *(row for row in snapshot.dimensional.entities if row.dimensional_entity_is_active),
+        *(row for row in snapshot.dimensional.attributes if row.dimensional_attribute_is_active),
+    ):
+        if (
+            upstream.dimensional_entity_schema_name.casefold(),
+            upstream.dimensional_entity_name.casefold(),
+        ) in dimensional_keys:
             cited_context.update(
                 source.context_record.context_record_id
                 for source in upstream.sources
@@ -871,8 +981,27 @@ def _mapping_support_records(
         if isinstance(source.object, MappingModeledEntity)
         and source.object.entity_type == "logical_entity"
     }
-    if not logical_keys:
+    dimensional_keys = {
+        (source.object.entity_schema_name.casefold(), source.object.entity_name.casefold())
+        for source in preparation.context.sources
+        if isinstance(source.object, MappingModeledEntity)
+        and source.object.entity_type == "dimensional_entity"
+    }
+    if not logical_keys and not dimensional_keys:
         return records
+    target = preparation.context.target
+    layer = target.entity_type.removesuffix("_entity")
+    parent_keys = {
+        (
+            target.entity_type,
+            row[f"to_{layer}_entity_schema_name"].casefold(),
+            row[f"to_{layer}_entity_name"].casefold(),
+        )
+        for row in support["modeled_relationships"]
+        if row[f"from_{layer}_entity_schema_name"].casefold()
+        == target.entity_schema_name.casefold()
+        and row[f"from_{layer}_entity_name"].casefold() == target.entity_name.casefold()
+    }
     physical = {
         natural_key(source.object.model_dump()): source.object
         for source in (*preparation.context.sources, *preparation.context.upstream_physical_sources)
@@ -913,8 +1042,13 @@ def _mapping_support_records(
             if source.support_source_type == "object":
                 physical_key = natural_key(source.source_object.model_dump())
                 if physical_key not in physical:
-                    continue
-                lineage_objects.add(physical_key)
+                    if (
+                        "logical_entity",
+                        *key,
+                    ) not in parent_keys or physical_key not in input_keys:
+                        continue
+                else:
+                    lineage_objects.add(physical_key)
             elif (
                 source.context_record.context_record_id.casefold() not in applicable_context_records
             ):
@@ -940,9 +1074,13 @@ def _mapping_support_records(
                     source.source_attribute.attribute_name.casefold(),
                 )
                 if physical_key not in attribute_keys:
-                    continue
-                lineage_attributes.add(physical_key)
-                lineage_objects.add(physical_key[:-1])
+                    if ("logical_entity", *key) not in parent_keys or physical_key[
+                        :-1
+                    ] not in input_keys:
+                        continue
+                else:
+                    lineage_attributes.add(physical_key)
+                    lineage_objects.add(physical_key[:-1])
             elif (
                 source.context_record.context_record_id.casefold() not in applicable_context_records
             ):
@@ -951,6 +1089,72 @@ def _mapping_support_records(
         records.append({"evidence_type": "source_logical_attribute", "record": row})
     for _, _, row in _eligible_logical_relationships(snapshot, selected_attributes):
         records.append({"evidence_type": "source_logical_relationship", "record": row})
+    # A Gold lookup's key can originate in a different Silver Entity from the
+    # fact's driver. Keep that saved lineage as evidence, never as input eligibility.
+    active_logical_keys = {
+        (row.logical_entity_schema_name.casefold(), row.logical_entity_name.casefold())
+        for row in snapshot.logical.entities
+        if row.logical_entity_is_active
+    }
+    active_logical_attributes = {
+        (
+            row.logical_entity_schema_name.casefold(),
+            row.logical_entity_name.casefold(),
+            row.logical_attribute_name.casefold(),
+        )
+        for row in snapshot.logical.attributes
+        if row.logical_attribute_is_active
+        and (row.logical_entity_schema_name.casefold(), row.logical_entity_name.casefold())
+        in active_logical_keys
+    }
+    dimensional_attributes: set[tuple[str, str, str]] = set()
+    for kind, rows in (
+        ("source_dimensional_entity", snapshot.dimensional.entities),
+        ("source_dimensional_attribute", snapshot.dimensional.attributes),
+    ):
+        for item in rows:
+            row = item.model_dump(mode="json")
+            key = (
+                row["dimensional_entity_schema_name"].casefold(),
+                row["dimensional_entity_name"].casefold(),
+            )
+            if (
+                key not in dimensional_keys
+                or not row[
+                    "dimensional_attribute_is_active"
+                    if kind == "source_dimensional_attribute"
+                    else "dimensional_entity_is_active"
+                ]
+            ):
+                continue
+            if kind == "source_dimensional_attribute":
+                dimensional_attributes.add((*key, row["dimensional_attribute_name"].casefold()))
+            sources = row["sources"]
+            row["sources"] = []
+            for source in sources:
+                if not source["is_active"]:
+                    continue
+                source_type = source["support_source_type"]
+                if source_type == "context_record":
+                    if (
+                        source["context_record"]["context_record_id"].casefold()
+                        not in applicable_context_records
+                    ):
+                        continue
+                else:
+                    upstream = source[f"source_{source_type}"]
+                    logical_key = (
+                        upstream["logical_entity_schema_name"].casefold(),
+                        upstream["logical_entity_name"].casefold(),
+                    )
+                    if logical_key not in active_logical_keys or (
+                        source_type == "logical_attribute"
+                        and (*logical_key, upstream["logical_attribute_name"].casefold())
+                        not in active_logical_attributes
+                    ):
+                        continue
+                cast(list[dict[str, Any]], row["sources"]).append(source)
+            records.append({"evidence_type": kind, "record": row})
     system_code = preparation.context.source_system.system_code.casefold()
     template_codes: set[str] = set()
     for kind, mappings in (
@@ -969,15 +1173,26 @@ def _mapping_support_records(
                 else "attribute_mapping_status"
             ]
             if (
-                mapping.modeled_entity_type != "logical_entity"
-                or key not in logical_keys
-                or mapping.source_system_code.casefold() != system_code
+                key
+                not in (
+                    logical_keys
+                    if mapping.modeled_entity_type == "logical_entity"
+                    else dimensional_keys
+                )
+                or (
+                    mapping.source_system_code.casefold() != system_code
+                    and (mapping.modeled_entity_type, *key) not in parent_keys
+                )
                 or status != "active"
             ):
                 continue
-            if (
-                kind == "source_attribute_mapping"
-                and (*key, row["modeled_attribute_name"].casefold()) not in selected_attributes
+            if kind == "source_attribute_mapping" and (
+                *key,
+                row["modeled_attribute_name"].casefold(),
+            ) not in (
+                selected_attributes
+                if mapping.modeled_entity_type == "logical_entity"
+                else dimensional_attributes
             ):
                 continue
             records.append({"evidence_type": kind, "record": row})

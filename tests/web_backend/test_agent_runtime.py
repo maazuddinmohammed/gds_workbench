@@ -25,6 +25,7 @@ from atlas_platform.features.mapping.complete_candidate import (
     CompleteMappingCandidateValidator,
 )
 from atlas_platform.features.mapping.execution_context import (
+    MappingExecutionContextLimits,
     build_mapping_execution_context,
 )
 from atlas_platform.features.subject_areas import SubjectAreaCandidateValidator
@@ -39,6 +40,7 @@ from atlas_platform.features.workflows.authoring.context_contracts import (
 from atlas_platform.features.workflows.authoring.context_readers import (
     FrozenContextReaders,
 )
+from atlas_platform.features.workflows.authoring.tool_configuration import configure_tools
 from atlas_platform.integrations.agents import (
     create_agent_execution_router,
 )
@@ -47,6 +49,7 @@ from atlas_platform.integrations.agents.configuration import (
     AgentRuntimeConfiguration,
     FoundryClientCredentials,
 )
+from atlas_platform.integrations.agents.fake_mapping import fake_mapping_context_from_tools
 from mapping_fixtures import mapping_preparation as _mapping_preparation
 from pydantic import JsonValue, SecretStr
 
@@ -173,18 +176,27 @@ class _RecordingMappingCatalog:
 def _tool_assisted_mapping_request(
     *,
     sdk_code: str,
+    basis_only: bool = False,
+    existing: bool = False,
+    max_page_records: int = 200,
 ) -> tuple[
     AgentExecutionRequest,
     CompleteMappingCandidateValidator,
     _RecordingMappingCatalog,
 ]:
-    preparation = _mapping_preparation(execution_mode="tool_assisted")
+    preparation = _mapping_preparation(execution_mode="tool_assisted", existing=existing)
     context = build_mapping_execution_context(
         preparation=preparation,
         execution_mode="tool_assisted",
+        limits=MappingExecutionContextLimits(max_tool_page_records=max_page_records),
     )
     catalog = context.tool_catalog
     assert catalog is not None
+    if basis_only:
+        catalog = configure_tools(
+            catalog, ("get_mapping_basis",), workflow="mapping", execution_mode="tool_assisted"
+        )
+        assert catalog is not None
     recording_catalog = _RecordingMappingCatalog(catalog)
     validator = CompleteMappingCandidateValidator(preparation=preparation)
     return (
@@ -775,6 +787,50 @@ async def test_local_fake_uses_local_tools_for_one_complete_mapping_candidate(
     page = cast(dict[str, JsonValue], catalog.delegate.invoke("get_mapping_sources", {}))
     source = cast(list[dict[str, JsonValue]], page["items"])[0]
     assert cast(dict[str, JsonValue], source["object"])["attributes"]
+
+
+async def test_local_fake_reconstructs_mapping_from_compact_reader_pages_only() -> None:
+    request, validator, catalog = _tool_assisted_mapping_request(
+        sdk_code="openai_agents_sdk", basis_only=True, existing=True, max_page_records=1
+    )
+    request = request.model_copy(
+        update={
+            "context": {
+                "original_context": {"__gds_downstream_inputs__": "mapping", "values": {}},
+                "repair": None,
+            }
+        }
+    )
+
+    reconstructed, count = fake_mapping_context_from_tools(request)
+
+    assert count == len(catalog.calls) and count > 1
+    assert catalog.calls[0] == ("get_mapping_basis", {})
+    assert all(name == "get_mapping_basis" for name, _ in catalog.calls)
+    assert all(set(arguments) == {"cursor"} for _, arguments in catalog.calls[1:])
+    target = cast(dict[str, JsonValue], reconstructed["target_metadata"])
+    assert target["entity_name"] == "Customer"
+    attributes = cast(list[dict[str, JsonValue]], target["attributes"])
+    assert [row["attribute_name"] for row in attributes] == ["CustomerID"]
+    header = cast(list[dict[str, JsonValue]], reconstructed["existing_mapping"])[0]
+    assert header["transformation_document"] == {"kind": "direct", "logic": "existing"}
+    saved = cast(list[dict[str, JsonValue]], header["attribute_mappings"])[0]
+    assert saved["modeled_attribute_name"] == "CustomerID"
+    assert saved["transformation_document"] == header["transformation_document"]
+    readiness = cast(dict[str, JsonValue], reconstructed["readiness"])
+    ready = cast(list[dict[str, JsonValue]], readiness["headers"])[0]
+    assert ready["action"] == "extend"
+    assert ready["attribute_actions"] == [
+        {"modeled_attribute_name": "CustomerID", "action": "extend"}
+    ]
+
+    router = create_agent_execution_router(
+        configuration=AgentRuntimeConfiguration(mode="fake", timeout_seconds=120, connections=()),
+        capabilities=load_default_agent_capabilities(),
+    )
+    result = await router.execute(request)
+    assert result.tool_call_count == count
+    assert (await validator.validate(result.candidate)).issues == ()
 
 
 @pytest.mark.parametrize(

@@ -93,7 +93,7 @@ def fake_mapping_context_from_tools(
     outer = mapping_dict(request.context)
     original = mapping_dict(outer.get("original_context", outer))
     if original.get("__gds_downstream_inputs__") == "mapping":
-        values = mapping_dict(original.get("values"))
+        values: dict[str, JsonValue] = mapping_dict(original.get("values"))
         calls = 0
         if "get_existing_mapping" in request.allowed_tool_names:
             headers: list[JsonValue] = []
@@ -106,6 +106,68 @@ def fake_mapping_context_from_tools(
                     break
                 arguments = {"cursor": page["next_cursor"]}
             values = {**values, "existing_mapping": cast(JsonValue, headers)}
+        elif "get_mapping_basis" in request.allowed_tool_names:
+            targets: list[dict[str, JsonValue]] = []
+            fields: list[dict[str, JsonValue]] = []
+            arguments = {}
+            while True:
+                page = mapping_dict(catalog.invoke("get_mapping_basis", arguments))
+                calls += 1
+                for raw in _mapping_list(page.get("items")):
+                    card = mapping_dict(raw)
+                    if card.get("kind") == "target":
+                        targets.append(mapping_dict(card.get("record")))
+                    elif card.get("kind") == "field":
+                        fields.append(mapping_dict(card.get("record")))
+                if page.get("next_cursor") is None:
+                    if page.get("is_complete") is not True:
+                        raise InvalidRequestError("The local fake agent context is invalid.")
+                    break
+                arguments = {"cursor": page["next_cursor"]}
+            if len(targets) != 1:
+                raise InvalidRequestError("The local fake agent context is invalid.")
+            target = targets[0]
+            entity = {
+                key: value
+                for key, value in target.items()
+                if key not in {"action", "saved", "object_dependency_order"}
+            }
+            entity["attributes"] = [
+                {key: value for key, value in field.items() if key not in {"action", "saved"}}
+                for field in fields
+            ]
+            values = {
+                **values,
+                "target_metadata": entity,
+                "existing_mapping": [
+                    {
+                        "modeled_entity": entity,
+                        "object_dependency_order": target.get("object_dependency_order"),
+                        "transformation_document": target.get("saved"),
+                        "attribute_mappings": [
+                            {
+                                "modeled_attribute_name": field["attribute_name"],
+                                "transformation_document": field.get("saved"),
+                            }
+                            for field in fields
+                        ],
+                    }
+                ],
+                "readiness": {
+                    "headers": [
+                        {
+                            "action": target.get("action"),
+                            "attribute_actions": [
+                                {
+                                    "modeled_attribute_name": field["attribute_name"],
+                                    "action": field.get("action"),
+                                }
+                                for field in fields
+                            ],
+                        }
+                    ]
+                },
+            }
         return values, calls
     manifest_calls = int("get_mapping_context_manifest" in request.allowed_tool_names)
     if not isinstance(request.context, dict):

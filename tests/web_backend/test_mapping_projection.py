@@ -93,6 +93,22 @@ async def test_outer_projection_after_current_version_ctes() -> None:
     }
 
 
+async def test_projection_keeps_foreign_parent_namespace_placeholders_for_code() -> None:
+    validator = CompleteMappingCandidateValidator(preparation=mapping_preparation())
+    query = (
+        "SELECT <mapped_columns> FROM bronze.customer c "
+        "LEFT JOIN silver.Parent p ON p.SourceID = c.parent_id "
+        "AND p.SourceSystemID = CAST(<REFERENCE System ID> AS BIGINT) "
+        "WHERE c.GDSBatchID = wid_GDSBatchID"
+    )
+    answer = _answer(query, {"CustomerID": "p.ParentID"})
+    assert not (await validator.validate(answer)).issues
+    result = validator.parse_validated(answer).normalized.object_mapping
+    assert result and result.mapping_transformation_document == {
+        "sample_query": query.replace("<mapped_columns>", "p.ParentID AS `CustomerID`")
+    }
+
+
 @pytest.mark.parametrize(
     ("query", "expr"),
     [

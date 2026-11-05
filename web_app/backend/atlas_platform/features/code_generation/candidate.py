@@ -205,6 +205,9 @@ class CodeGenerationCandidateValidator:
                             message=(
                                 "Use only read-only queries and unqualified temporary views. "
                                 "Transformations finish with one explicit-column SELECT. "
+                                "Use schema.table references and the literal wid_GDSBatchID "
+                                "token; catalog qualifiers and SQL parameter bindings "
+                                "are unsupported. "
                                 "No persistent DDL, DML, commands, SELECT * or comments."
                             ),
                         ),
@@ -427,8 +430,26 @@ def _is_generation_sql(value: str, *, transformation: bool) -> bool:
             or not isinstance(statement.expression, Query)
         ):
             return False
+    for statement in statements:
+        assert statement is not None
+        relations = tuple(statement.find_all(exp.Table))
+        if any(relation.catalog for relation in relations):
+            return False
+        relation_keys = {
+            (relation.db.casefold(), relation.name.casefold()) for relation in relations
+        }
+        aliases = {relation.alias_or_name.casefold() for relation in relations}
+        if any(
+            column.catalog
+            and column.catalog.casefold() not in aliases
+            and (column.db.casefold(), column.table.casefold()) in relation_keys
+            for column in statement.find_all(exp.Column)
+        ):
+            # SQLGlot also parses deep struct paths as four-part Columns. Only
+            # reject a catalog-qualified relation column, not alias.struct.a.b.
+            return False
     if any(
-        node.comments
+        node.comments or isinstance(node, (exp.Placeholder, exp.Parameter))
         for statement in statements
         if statement is not None
         for node in statement.walk()

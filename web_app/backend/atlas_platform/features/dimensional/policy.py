@@ -26,6 +26,8 @@ from atlas_mcp.domain.snapshots.project import (
 )
 from pydantic import BaseModel, ValidationError
 
+from atlas_platform.features.workflows.authoring.dependency_order import resolve_dependency_orders
+
 
 class DimensionalProjectionConflictError(InvalidRequestError):
     """Candidate semantics conflict with the frozen Gold policy; safe to repair."""
@@ -315,9 +317,10 @@ def project_dimensional_foreign_key_policy(
     entities.update({_entity_key(record): record for record in changed_entities})
     attributes = {_attribute_key(record): record for record in baseline.attributes}
     attributes.update({_attribute_key(record): record for record in changed_attributes})
-    relationships = {
+    applied_relationships = {
         dimensional_relationship_key(record): record for record in baseline.relationships
     }
+    relationships = dict(applied_relationships)
     relationships.update(
         {dimensional_relationship_key(record): record for record in changed_relationships}
     )
@@ -441,14 +444,63 @@ def project_dimensional_foreign_key_policy(
             attributes[attribute_key] = desired
             projected_attributes[attribute_key] = desired
             affected_entity_keys.add(from_key)
-            projected_relationships.append(
-                relationship.model_copy(
-                    update={
-                        "from_dimensional_attribute_name": desired.dimensional_attribute_name,
-                        "to_dimensional_attribute_name": (surrogate.dimensional_attribute_name),
-                    }
+            basis = relationship.dimensional_relationship_basis
+            if normalize_project_key_value(
+                relationship.from_dimensional_attribute_name
+            ) != normalize_project_key_value(desired.dimensional_attribute_name):
+                # The edge will only retain generated endpoints. Keep its original
+                # role-specific business operands so Mapping can reconstruct the join.
+                child_operand = (
+                    f"{relationship.from_dimensional_entity_schema_name}."
+                    f"{relationship.from_dimensional_entity_name}."
+                    f"{relationship.from_dimensional_attribute_name}"
                 )
+                parent_operand = (
+                    f"{relationship.to_dimensional_entity_schema_name}."
+                    f"{relationship.to_dimensional_entity_name}."
+                    f"{relationship.to_dimensional_attribute_name}"
+                )
+                returned_key = (
+                    f"{relationship.to_dimensional_entity_schema_name}."
+                    f"{relationship.to_dimensional_entity_name}."
+                    f"{surrogate.dimensional_attribute_name}"
+                )
+                if normalize_project_key_value(
+                    relationship.to_dimensional_attribute_name
+                ) != normalize_project_key_value(surrogate.dimensional_attribute_name):
+                    lookup = (
+                        f"Lookup operand {child_operand} matches {parent_operand}; "
+                        f"return {returned_key}."
+                    )
+                else:
+                    # A saved Dimension may have exposed only its surrogate. It
+                    # identifies the returned value, not a natural-key predicate.
+                    lookup = (
+                        f"Lookup operand {child_operand}; return {returned_key}. "
+                        "Resolve the parent's business-key match from its lineage and Mapping."
+                    )
+                basis = f"{lookup}\n{basis}" if basis is not None else lookup
+            projected_relationship = relationship.model_copy(
+                update={
+                    "from_dimensional_attribute_name": desired.dimensional_attribute_name,
+                    "to_dimensional_attribute_name": surrogate.dimensional_attribute_name,
+                    "dimensional_relationship_basis": basis,
+                }
             )
+            for protected in (
+                relationship,
+                applied_relationships.get(dimensional_relationship_key(relationship)),
+                applied_relationships.get(dimensional_relationship_key(projected_relationship)),
+            ):
+                if (
+                    protected is not None
+                    and protected.dimensional_relationship_is_locked
+                    and protected != projected_relationship
+                ):
+                    raise DimensionalProjectionConflictError(
+                        "A locked Dimensional Relationship cannot be projected."
+                    )
+            projected_relationships.append(projected_relationship)
         elif to_entity.dimensional_entity_type in ("fact", "bridge"):
             raise DimensionalProjectionConflictError(
                 "Fact and Bridge Relationships must use the from endpoint."
@@ -530,6 +582,47 @@ def project_dimensional_foreign_key_policy(
 
     changed_attribute_by_key = {_attribute_key(record): record for record in changed_attributes}
     changed_attribute_by_key.update(projected_attributes)
+    changed_entity_by_key = {_entity_key(record): record for record in changed_entities}
+    edges = [
+        (
+            (
+                normalize_project_key_value(row.from_dimensional_entity_schema_name),
+                normalize_project_key_value(row.from_dimensional_entity_name),
+            ),
+            (
+                normalize_project_key_value(row.to_dimensional_entity_schema_name),
+                normalize_project_key_value(row.to_dimensional_entity_name),
+            ),
+        )
+        for row in relationships.values()
+        if row.dimensional_relationship_is_active
+    ]
+    orders = {
+        key: row.dimensional_entity_dependency_order
+        for key, row in entities.items()
+        if row.dimensional_entity_is_active
+    }
+    affected = set(changed_entity_by_key) | {
+        (
+            normalize_project_key_value(row.from_dimensional_entity_schema_name),
+            normalize_project_key_value(row.from_dimensional_entity_name),
+        )
+        for row in changed_relationships
+    }
+    resolved, _ = resolve_dependency_orders(
+        orders, edges, targets=affected, include_dependents=True
+    )
+    for key, order in resolved.items():
+        if order == orders[key]:
+            continue
+        entity = entities[key]
+        if entity.dimensional_entity_is_locked:
+            raise DimensionalProjectionConflictError(
+                "A locked Dimensional Entity needs a higher dependency order for its parent lookup."
+            )
+        changed_entity_by_key[key] = entity.model_copy(
+            update={"dimensional_entity_dependency_order": order}
+        )
     output: list[StageProjectChange] = []
     for dataset in ("dimensional_entity", "dimensional_attribute", "dimensional_relationship"):
         if dataset == "dimensional_attribute":
@@ -547,8 +640,7 @@ def project_dimensional_foreign_key_policy(
         elif dataset == "dimensional_relationship":
             records = [record.model_dump(mode="json") for record in projected_relationships]
         else:
-            change = changes_by_dataset.get(dataset)
-            records = [] if change is None else change.records
+            records = [record.model_dump(mode="json") for record in changed_entity_by_key.values()]
         if records:
             output.append(StageProjectChange(dataset=dataset, records=records))
     return tuple(output)

@@ -1,0 +1,345 @@
+{
+  "rollup": {
+    "description": "Posted line rollup preserves duplicate contributions, batch boundaries, missing totals, and separate parent roles.",
+    "source_system_code": "SHIP",
+    "source_system_value": 7,
+    "batch_value": 15,
+    "mapping": {
+      "source_tables": [
+        {
+          "tenant_code": "DEMO",
+          "system_code": "LAKE",
+          "connection_code": "WAREHOUSE",
+          "object_schema": "bronze",
+          "object_name": "dispatch"
+        },
+        {
+          "tenant_code": "DEMO",
+          "system_code": "LAKE",
+          "connection_code": "WAREHOUSE",
+          "object_schema": "bronze",
+          "object_name": "dispatch_detail"
+        },
+        {
+          "entity_type": "logical_entity",
+          "entity_schema_name": "silver",
+          "entity_name": "Depot"
+        }
+      ],
+      "filter_criteria": "Drive every dispatch in d.load_batch = wid_GDSBatchID. Aggregate dispatch_detail within load_batch = wid_GDSBatchID, retaining only status = 'POSTED', by dispatch_no and load_batch; sum quantity * unit_price - discount without deduplicating lines. Left join totals on dispatch_no and load_batch. Left join each Depot role on its canonical code and SHIP SourceSystemID; all Depot batches remain eligible. Missing depots retain dispatches with null role keys; missing totals become 0.",
+      "sample_query": "WITH detail_totals AS (SELECT dispatch_no, load_batch, SUM(quantity * unit_price - discount) AS net_total FROM bronze.dispatch_detail WHERE load_batch = wid_GDSBatchID AND status = 'POSTED' GROUP BY dispatch_no, load_batch) SELECT d.dispatch_no AS `SourceDispatchNo`,\n    origin.DepotID AS `OriginDepotID`,\n    destination.DepotID AS `DestinationDepotID`,\n    CAST(COALESCE(dt.net_total, 0) AS STRING) AS `ReferenceText`,\n    CAST(<SHIP System ID> AS BIGINT) AS `SourceSystemID` FROM bronze.dispatch AS d LEFT JOIN detail_totals AS dt ON dt.dispatch_no = d.dispatch_no AND dt.load_batch = d.load_batch LEFT JOIN silver.Depot AS origin ON origin.SourceDepotCode = upper(trim(d.origin_code)) AND origin.SourceSystemID = CAST(<SHIP System ID> AS BIGINT) LEFT JOIN silver.Depot AS destination ON destination.SourceDepotCode = upper(trim(d.destination_code)) AND destination.SourceSystemID = CAST(<SHIP System ID> AS BIGINT) WHERE d.load_batch = wid_GDSBatchID",
+      "fields": [
+        {
+          "name": "SourceDispatchNo",
+          "logic": "d.dispatch_no"
+        },
+        {
+          "name": "OriginDepotID",
+          "logic": "origin.DepotID"
+        },
+        {
+          "name": "DestinationDepotID",
+          "logic": "destination.DepotID"
+        },
+        {
+          "name": "ReferenceText",
+          "logic": "CAST(COALESCE(dt.net_total, 0) AS STRING)"
+        },
+        {
+          "name": "SourceSystemID",
+          "logic": "CAST(<SHIP System ID> AS BIGINT)"
+        }
+      ]
+    },
+    "generated_sql": "CREATE OR REPLACE TEMPORARY VIEW temp_dispatch_ship AS\nWITH detail_totals AS (\n    SELECT dispatch_no, load_batch, SUM(quantity * unit_price - discount) AS net_total\n    FROM bronze.dispatch_detail\n    WHERE load_batch = wid_GDSBatchID AND status = 'POSTED'\n    GROUP BY dispatch_no, load_batch\n)\nSELECT\n    d.dispatch_no AS SourceDispatchNo,\n    origin.DepotID AS OriginDepotID,\n    destination.DepotID AS DestinationDepotID,\n    CAST(COALESCE(dt.net_total, 0) AS STRING) AS ReferenceText,\n    CAST(7 AS BIGINT) AS SourceSystemID\nFROM bronze.dispatch AS d\nLEFT JOIN detail_totals AS dt\n    ON dt.dispatch_no = d.dispatch_no AND dt.load_batch = d.load_batch\nLEFT JOIN silver.Depot AS origin\n    ON origin.SourceDepotCode = UPPER(TRIM(d.origin_code))\n    AND origin.SourceSystemID = CAST(7 AS BIGINT)\nLEFT JOIN silver.Depot AS destination\n    ON destination.SourceDepotCode = UPPER(TRIM(d.destination_code))\n    AND destination.SourceSystemID = CAST(7 AS BIGINT)\nWHERE d.load_batch = wid_GDSBatchID;\n\nSELECT SourceDispatchNo, OriginDepotID, DestinationDepotID, ReferenceText, SourceSystemID\nFROM temp_dispatch_ship;",
+    "sources": {
+      "bronze.dispatch": {
+        "columns": [
+          "dispatch_no",
+          "origin_code",
+          "destination_code",
+          "load_batch"
+        ],
+        "rows": [
+          [
+            "trip-1",
+            " aa ",
+            "bz",
+            15
+          ],
+          [
+            "trip-2",
+            "unknown",
+            "Aa",
+            15
+          ],
+          [
+            "trip-old",
+            "aa",
+            "bz",
+            14
+          ]
+        ]
+      },
+      "silver.Depot": {
+        "columns": [
+          "DepotID",
+          "SourceDepotCode",
+          "SourceSystemID",
+          "GDSBatchID"
+        ],
+        "rows": [
+          [
+            201,
+            "AA",
+            7,
+            10
+          ],
+          [
+            202,
+            "BZ",
+            7,
+            15
+          ],
+          [
+            301,
+            "AA",
+            8,
+            15
+          ]
+        ]
+      },
+      "bronze.dispatch_detail": {
+        "columns": [
+          "dispatch_no",
+          "load_batch",
+          "status",
+          "quantity",
+          "unit_price",
+          "discount"
+        ],
+        "rows": [
+          [
+            "trip-1",
+            14,
+            "POSTED",
+            99,
+            100,
+            0
+          ],
+          [
+            "trip-1",
+            15,
+            "POSTED",
+            2,
+            10,
+            1
+          ],
+          [
+            "trip-1",
+            15,
+            "POSTED",
+            2,
+            10,
+            1
+          ],
+          [
+            "trip-1",
+            15,
+            "CANCELLED",
+            100,
+            10,
+            0
+          ]
+        ]
+      }
+    },
+    "expected": {
+      "columns": [
+        "SourceDispatchNo",
+        "OriginDepotID",
+        "DestinationDepotID",
+        "ReferenceText",
+        "SourceSystemID"
+      ],
+      "rows": [
+        [
+          "trip-1",
+          201,
+          202,
+          "38",
+          7
+        ],
+        [
+          "trip-2",
+          null,
+          201,
+          "0",
+          7
+        ]
+      ]
+    }
+  },
+  "temporal": {
+    "description": "Two parent roles resolve different half-open SCD validity intervals at their respective event timestamps.",
+    "source_system_code": "SHIP",
+    "source_system_value": 7,
+    "batch_value": 15,
+    "mapping": {
+      "source_tables": [
+        {
+          "entity_type": "logical_entity",
+          "entity_schema_name": "silver",
+          "entity_name": "Shipment"
+        },
+        {
+          "entity_type": "dimensional_entity",
+          "entity_schema_name": "gold",
+          "entity_name": "DimCustomer"
+        }
+      ],
+      "filter_criteria": "Current run batch for the SHIP driving shipments only. Each customer role resolves the version valid at its own event time using [start,end). Keep missing parent matches. Parent versions do not overlap for one CustomerID and System.",
+      "sample_query": "SELECT s.ShipmentNumber, ship.CustomerKey AS ShipCustomerKey, bill.CustomerKey AS BillCustomerKey, s.NetAmount, s.SourceSystemID FROM silver.Shipment s LEFT JOIN gold.DimCustomer ship ON ship.CustomerID = s.ShipCustomerID AND ship.SourceSystemID = s.SourceSystemID AND ship.RecordStartTime <= s.ShipTime AND (s.ShipTime < ship.RecordEndTime OR ship.RecordEndTime IS NULL) LEFT JOIN gold.DimCustomer bill ON bill.CustomerID = s.BillCustomerID AND bill.SourceSystemID = s.SourceSystemID AND bill.RecordStartTime <= s.InvoiceTime AND (s.InvoiceTime < bill.RecordEndTime OR bill.RecordEndTime IS NULL) WHERE s.GDSBatchID = wid_GDSBatchID AND s.SourceSystemID = 7",
+      "fields": [
+        {
+          "name": "ShipmentNumber",
+          "logic": "s.ShipmentNumber"
+        },
+        {
+          "name": "ShipCustomerKey",
+          "logic": "ship.CustomerKey"
+        },
+        {
+          "name": "BillCustomerKey",
+          "logic": "bill.CustomerKey"
+        },
+        {
+          "name": "NetAmount",
+          "logic": "s.NetAmount"
+        },
+        {
+          "name": "SourceSystemID",
+          "logic": "s.SourceSystemID"
+        }
+      ]
+    },
+    "generated_sql": "CREATE OR REPLACE TEMPORARY VIEW temp_fact_shipment_ship AS\nSELECT s.ShipmentNumber AS ShipmentNumber, ship.CustomerKey AS ShipCustomerKey, bill.CustomerKey AS BillCustomerKey, s.NetAmount AS NetAmount, s.SourceSystemID AS SourceSystemID\nFROM silver.Shipment AS s\nLEFT JOIN gold.DimCustomer AS ship\n ON ship.CustomerID = s.ShipCustomerID\n AND ship.SourceSystemID = s.SourceSystemID\n AND ship.RecordStartTime <= s.ShipTime\n AND (s.ShipTime < ship.RecordEndTime OR ship.RecordEndTime IS NULL)\nLEFT JOIN gold.DimCustomer AS bill\n ON bill.CustomerID = s.BillCustomerID\n AND bill.SourceSystemID = s.SourceSystemID\n AND bill.RecordStartTime <= s.InvoiceTime\n AND (s.InvoiceTime < bill.RecordEndTime OR bill.RecordEndTime IS NULL)\nWHERE s.GDSBatchID = wid_GDSBatchID AND s.SourceSystemID = 7;\n\nSELECT ShipmentNumber, ShipCustomerKey, BillCustomerKey, NetAmount, SourceSystemID FROM temp_fact_shipment_ship;",
+    "sources": {
+      "silver.Shipment": {
+        "columns": [
+          "ShipmentNumber",
+          "ShipCustomerID",
+          "BillCustomerID",
+          "ShipTime",
+          "InvoiceTime",
+          "NetAmount",
+          "SourceSystemID",
+          "GDSBatchID"
+        ],
+        "rows": [
+          [
+            "S1",
+            100,
+            100,
+            "2025-02-01",
+            "2025-07-01",
+            30,
+            7,
+            15
+          ],
+          [
+            "S2",
+            999,
+            100,
+            "2025-05-31",
+            "2025-06-01",
+            40,
+            7,
+            15
+          ],
+          [
+            "old",
+            100,
+            100,
+            "2025-02-01",
+            "2025-07-01",
+            1000,
+            7,
+            14
+          ],
+          [
+            "other",
+            100,
+            100,
+            "2025-02-01",
+            "2025-07-01",
+            2000,
+            8,
+            15
+          ]
+        ]
+      },
+      "gold.DimCustomer": {
+        "columns": [
+          "CustomerKey",
+          "CustomerID",
+          "SourceSystemID",
+          "RecordStartTime",
+          "RecordEndTime",
+          "GDSBatchID"
+        ],
+        "rows": [
+          [
+            501,
+            100,
+            7,
+            "2025-01-01",
+            "2025-06-01",
+            9
+          ],
+          [
+            502,
+            100,
+            7,
+            "2025-06-01",
+            null,
+            10
+          ],
+          [
+            801,
+            100,
+            8,
+            "2025-01-01",
+            null,
+            15
+          ]
+        ]
+      }
+    },
+    "expected": {
+      "columns": [
+        "ShipmentNumber",
+        "ShipCustomerKey",
+        "BillCustomerKey",
+        "NetAmount",
+        "SourceSystemID"
+      ],
+      "rows": [
+        [
+          "S1",
+          501,
+          502,
+          30,
+          7
+        ],
+        [
+          "S2",
+          null,
+          502,
+          40,
+          7
+        ]
+      ]
+    }
+  }
+}

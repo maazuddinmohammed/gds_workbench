@@ -170,8 +170,9 @@ REVOKE ALL ON FUNCTION workflow.list_mapping_branches(BIGINT, VARCHAR) FROM PUBL
 
 -- Source evidence for one branch. Logical inputs include physical Objects and peer Logical
 -- lookups; Dimensional inputs are Logical Entities. A Dimensional input is any Logical
--- Entity the selected source System feeds, mapped yet or not; a peer lookup requires a
--- saved Mapping for that System (at least one rule), whose key rules the lookup repeats.
+-- Entity the selected source System feeds, mapped yet or not. Explicit model parents
+-- are eligible lookup evidence before Mapping; other peers require a saved Mapping
+-- for that System (at least one rule), whose key rules the lookup repeats.
 CREATE FUNCTION workflow.list_mapping_source_objects(
     p_project_id BIGINT, p_target_entity_id BIGINT,
     p_modeled_entity_type VARCHAR(30), p_source_system_id BIGINT
@@ -194,6 +195,37 @@ AS $list_mapping_source_objects$
           FROM workflow.list_mapping_branches(p_project_id, 'logical_entity') AS branch
          WHERE p_modeled_entity_type = 'dimensional_entity'
            AND branch.source_system_id = p_source_system_id
+    ), relationship_parents AS MATERIALIZED (
+        -- A model declares its lookup before either Mapping exists. The parent's
+        -- source System may differ from this branch's System; the saved relationship
+        -- supplies the scope, not a same-System Mapping prerequisite.
+        SELECT 'logical_entity'::TEXT AS entity_type,
+               relation.logical_relationship_to_entity_id AS entity_id
+          FROM workflow.logical_relationship AS relation
+          JOIN workflow.logical_attribute AS child
+            ON child.logical_attribute_id = relation.logical_relationship_from_attribute_id
+           AND child.logical_attribute_is_active
+          JOIN workflow.logical_attribute AS parent
+            ON parent.logical_attribute_id = relation.logical_relationship_to_attribute_id
+           AND parent.logical_attribute_is_active
+         WHERE p_modeled_entity_type = 'logical_entity'
+           AND relation.project_id = p_project_id
+           AND relation.logical_relationship_from_entity_id = p_target_entity_id
+           AND relation.logical_relationship_is_active
+        UNION
+        SELECT 'dimensional_entity'::TEXT,
+               relation.dimensional_relationship_to_entity_id
+          FROM workflow.dimensional_relationship AS relation
+          JOIN workflow.dimensional_attribute AS child
+            ON child.dimensional_attribute_id = relation.dimensional_relationship_from_attribute_id
+           AND child.dimensional_attribute_is_active
+          JOIN workflow.dimensional_attribute AS parent
+            ON parent.dimensional_attribute_id = relation.dimensional_relationship_to_attribute_id
+           AND parent.dimensional_attribute_is_active
+         WHERE p_modeled_entity_type = 'dimensional_entity'
+           AND relation.project_id = p_project_id
+           AND relation.dimensional_relationship_from_entity_id = p_target_entity_id
+           AND relation.dimensional_relationship_is_active
     )
     SELECT support.logical_entity_source_mapping_id, target.modeled_entity_id,
            CASE WHEN support.logical_entity_source_mapping_id IS NULL THEN 'candidate' ELSE 'support' END,
@@ -214,7 +246,12 @@ AS $list_mapping_source_objects$
            CASE WHEN target.modeled_entity_type = 'logical_entity' THEN 'lookup'
                 WHEN support.dimensional_entity_source_mapping_id IS NOT NULL THEN 'support'
                 ELSE 'candidate' END,
-           CASE WHEN target.modeled_entity_type = 'logical_entity'
+           CASE WHEN target.modeled_entity_type = 'logical_entity' AND EXISTS (
+                    SELECT 1 FROM relationship_parents AS parent
+                     WHERE parent.entity_type = 'logical_entity'
+                       AND parent.entity_id = source.logical_entity_id)
+                THEN 'Modeled relationship parent; use its business identity and returned key.'
+                WHEN target.modeled_entity_type = 'logical_entity'
                 THEN 'Available peer Logical lookup with applied Mapping for the selected source System.'
                 ELSE coalesce(support.dimensional_entity_source_mapping_rationale,
                     'Available Logical source candidate; relevance must be established from evidence.') END,
@@ -233,6 +270,10 @@ AS $list_mapping_source_objects$
      WHERE CASE WHEN target.modeled_entity_type = 'dimensional_entity'
                 THEN source.logical_entity_id IN (SELECT logical_entity_id FROM fed_logical)
                 ELSE EXISTS (
+                    SELECT 1 FROM relationship_parents AS parent
+                     WHERE parent.entity_type = 'logical_entity'
+                       AND parent.entity_id = source.logical_entity_id
+                ) OR EXISTS (
          SELECT 1 FROM workflow.mapping_object AS mapping
          JOIN core.system AS system ON system.system_id = mapping.source_system_id AND system.is_active
           WHERE mapping.project_id = p_project_id AND mapping.logical_entity_id = source.logical_entity_id
@@ -250,7 +291,11 @@ AS $list_mapping_source_objects$
      ) END
     UNION ALL
     SELECT NULL::BIGINT, target.modeled_entity_id, 'lookup'::TEXT,
-           'Available peer Dimensional lookup with applied Mapping for the selected source System.'::TEXT,
+           CASE WHEN EXISTS (SELECT 1 FROM relationship_parents AS parent
+                              WHERE parent.entity_type = 'dimensional_entity'
+                                AND parent.entity_id = source.dimensional_entity_id)
+                THEN 'Modeled relationship parent; use its business identity and returned key.'
+                ELSE 'Available peer Dimensional lookup with applied Mapping for the selected source System.' END,
            FALSE, NULL::BIGINT, NULL::BIGINT,
            source.dimensional_entity_id, source.dimensional_entity_is_locked, TRUE
       FROM target
@@ -259,6 +304,10 @@ AS $list_mapping_source_objects$
        AND target.modeled_entity_type = 'dimensional_entity'
        AND source.dimensional_entity_id <> target.modeled_entity_id
      WHERE EXISTS (
+         SELECT 1 FROM relationship_parents AS parent
+          WHERE parent.entity_type = 'dimensional_entity'
+            AND parent.entity_id = source.dimensional_entity_id
+     ) OR EXISTS (
          SELECT 1 FROM workflow.mapping_object AS mapping
          JOIN core.system AS system ON system.system_id = mapping.source_system_id AND system.is_active
           WHERE mapping.project_id = p_project_id AND mapping.dimensional_entity_id = source.dimensional_entity_id

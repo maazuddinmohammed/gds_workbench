@@ -216,6 +216,7 @@ class MappingOutputTemplateInventory(_FrozenProject):
 
 class MappingModeledAttribute(_FrozenProject):
     is_surrogate_key: bool = False
+    is_natural_key: bool = False
     attribute_id: int = Field(gt=0)
     attribute_name: str = Field(min_length=1, max_length=255)
     attribute_definition: str = Field(min_length=1)
@@ -354,6 +355,7 @@ class MappingHeaderReadiness(_FrozenProject):
     modeled_entity_id: int = Field(gt=0)
     mapping_object_id: int | None = Field(default=None, gt=0)
     action: ReadinessAction
+    required_dependency_order: int = Field(default=0, ge=0)
     attribute_actions: tuple[MappingAttributeReadiness, ...]
 
 

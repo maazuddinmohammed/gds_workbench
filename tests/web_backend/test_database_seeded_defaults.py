@@ -53,6 +53,7 @@ from atlas_platform.integrations.agents import LocalFakeAgentAdapter
 from atlas_platform.prompt_rendering import (
     PromptComponentTemplates,
     PromptVariableDefinition,
+    referenced_prompt_names,
 )
 from jsonschema import Draft202012Validator
 
@@ -531,6 +532,9 @@ async def test_installed_mapping_defaults_execute(
     def checked_render(**kwargs: Any) -> Any:
         stage = next(item for item in stages if kwargs["templates"] is item.templates)
         for variable in stage.variables:
+            if variable.name not in referenced_prompt_names(kwargs["templates"]):
+                assert variable.resolver_key not in kwargs["resolver_values"]
+                continue
             contract = get_prompt_input_contract(
                 project_workflow="mapping",
                 workflow_execution_mode=mode,
@@ -620,6 +624,9 @@ async def test_installed_sql_defaults_with_repository_projection(
         )
         assert actual_templates.tool_instruction == stages[0].templates.tool_instruction
         for variable in stages[0].variables:
+            if variable.name not in referenced_prompt_names(kwargs["templates"]):
+                assert variable.resolver_key not in kwargs["resolver_values"]
+                continue
             contract = get_prompt_input_contract(
                 project_workflow="code_generation",
                 workflow_execution_mode=None,
@@ -742,6 +749,9 @@ async def test_installed_validation_defaults_with_repository_context(
         nonlocal renders
         assert kwargs["templates"] is stages[0].templates
         for variable in stages[0].variables:
+            if variable.name not in referenced_prompt_names(kwargs["templates"]):
+                assert variable.resolver_key not in kwargs["resolver_values"]
+                continue
             contract = get_prompt_input_contract(
                 project_workflow="validation",
                 workflow_execution_mode=None,

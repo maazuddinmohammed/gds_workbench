@@ -101,7 +101,7 @@ def test_builder_creates_exact_ui_upload_roots(tmp_path: Path) -> None:
             ROOT / "deployment/databricks_ui" / name
         ).read_bytes()
     assert "/artifacts/databricks-ui/" in ROOT_GITIGNORE.read_text(encoding="utf-8")
-    assert "/artifacts/databricks-ui-foundry/" in ROOT_GITIGNORE.read_text(
+    assert "/artifacts/databricks-ui-*/" in ROOT_GITIGNORE.read_text(
         encoding="utf-8"
     )
 

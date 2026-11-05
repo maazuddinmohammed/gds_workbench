@@ -9,6 +9,7 @@ from atlas_mcp.domain.authorization import RequestPrincipal, ToolPolicy
 from atlas_mcp.domain.errors import AuthorizationDeniedError
 from atlas_mcp.infrastructure.postgres import ReadIsolation
 
+from atlas_platform.features.workflows.authoring.dependency_order import resolve_dependency_orders
 from atlas_platform.features.workflows.execution.contracts import WorkflowExecutionDatabase
 
 from .preparation_contracts import (
@@ -100,7 +101,7 @@ class MappingReadinessService:
             sorted(
                 preparations,
                 key=lambda item: (
-                    item.context.headers[0].object_dependency_order,
+                    item.readiness.headers[0].required_dependency_order,
                     item.context.source_system.system_code.casefold(),
                     item.context.target.entity_schema_name.casefold(),
                     item.context.target.entity_name.casefold(),
@@ -169,6 +170,34 @@ def assess_mapping_readiness(
             issue("source.objects_unavailable", "A source is inactive or incomplete.")
 
     header = context.headers[0]
+    orders = {
+        node.modeled_entity_id: node.dependency_order
+        for node in context.target_dependency_graph.nodes
+        if node.status == "active"
+    }
+    orders[target.entity_id] = max(
+        orders.get(target.entity_id, 0), target.dependency_order, header.object_dependency_order
+    )
+    resolved, blocked = resolve_dependency_orders(
+        orders,
+        (
+            (edge.successor_modeled_entity_id, edge.predecessor_modeled_entity_id)
+            for edge in context.target_dependency_graph.edges
+        ),
+        targets={target.entity_id},
+    )
+    required_order = resolved.get(target.entity_id, orders[target.entity_id])
+    if target.entity_id in blocked:
+        issue(
+            "dependency.unschedulable",
+            "A self-reference or dependency cycle needs an explicit loading strategy "
+            "before Mapping.",
+        )
+    if header.is_locked and header.object_dependency_order < required_order:
+        issue(
+            "dependency.locked_order",
+            "The locked Mapping must load after its parent. Review its dependency order first.",
+        )
     modeled_attributes = {
         item.attribute_id: item
         for item in header.modeled_entity.attributes
@@ -255,6 +284,7 @@ def assess_mapping_readiness(
         modeled_entity_id=header.modeled_entity_id,
         mapping_object_id=header.mapping_object_id,
         action=object_action,
+        required_dependency_order=required_order,
         attribute_actions=tuple(attribute_actions),
     )
     return MappingReadiness(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, cast
@@ -137,11 +138,11 @@ def _materialize_sample_query(
         object_dependency_order=obj.object_dependency_order,
         mapping_transformation_document={**document, "sample_query": expanded},
     )
-    system_code = preparation.context.source_system.system_code
     try:
-        # The actual System value is bound later by Code Generation.
+        # Code binds registered System values later, including a parent's different
+        # namespace. Substitute only in this syntax check, never in saved Mapping.
         statements = parse(
-            expanded.replace(f"<{system_code} System ID>", "0"),
+            re.sub(r"<[^<>\r\n]{1,100} System ID>", "0", expanded),
             read="databricks",
             error_level=ErrorLevel.RAISE,
         )

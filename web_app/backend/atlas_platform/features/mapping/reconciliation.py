@@ -105,11 +105,9 @@ class MappingCandidateReconciler:
                         header.output_template_id,
                     )
                 ),
-                object_dependency_order=(
-                    candidate.object_mapping.object_dependency_order
-                    if candidate.object_mapping is not None and object_document is not None
-                    else header.object_dependency_order
-                ),
+                # Every pair shares the frozen graph. An agent-supplied increase
+                # could otherwise put this parent after its already-prepared child.
+                object_dependency_order=readiness.required_dependency_order,
                 mapping_transformation_document=cast(dict[str, object] | None, next_document),
                 object_mapping_status="active" if has_output else header.status,
                 object_mapping_is_locked=header.is_locked,

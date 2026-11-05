@@ -257,15 +257,16 @@ it contradicts the designed grain or keys. A source instance column joins the na
 key; load batch columns such as `GDSBatchID` are never key parts; foreign-key
 nullability follows business meaning. SourceSystemID has one value per System, not per
 instance, so an Entity that mixes instances of one System keeps an instance Attribute in
-its natural key. When a target needs current rows from an appended-load table,
-Build records the highest value of the registered batch column per complete key
-in that table's source note. A Project population rule can specify a different slice.
-Mapping applies a row choice only when lineage, a source note or Context states
-it, and otherwise reports the missing rule. Optimize shows the Entities whose foreign keys
+its natural key. Build records the current orchestration batch for a batched driving input, using
+its registered batch column; Bronze helpers from that load align batches in the join.
+A Project population rule can specify a different slice or staged reduction. Parent
+Silver/Gold lookups remain eligible across earlier batches. Mapping never substitutes
+an arbitrary latest-per-key reduction for that load contract. Optimize shows the Entities whose foreign keys
 point at a name-variant Entity in full, so a merge can rename those foreign keys.
 
 Mapping translates each target Attribute's saved lineage: its source columns and the
-Build's note (stored as the source `rationale`; null means a straight copy). A pair's
+Build's note (stored as the source `rationale`; null means a straight copy only for
+non-foreign-key fields). A pair's
 Run event reports only how many Attributes were mapped; unresolved issues stay in the
 draft.
 
@@ -288,10 +289,19 @@ empty result. Final validation covers the whole future Project before Apply.
 
 Code may use partial applied Mapping with explicit typed-null/zero-row placeholders
 and warnings. Missing rules cannot justify invented joins or business logic.
-Code, Validation and peer lookups judge each System on its own saved Mapping (at
-least one rule); another System's gaps never hide a target. A Logical input of a
+Code and Validation targets need at least one saved Mapping rule for their own
+System; another System's gaps never hide a target. An active modeled relationship
+makes its parent eligible for lookup before the parent has Mapping, including an
+explicit cross-System parent. Other peer candidates still need saved Mapping. Parent
+key flags, lineage and relevant saved rules reach Mapping without widening the
+executable source scope. Dimensional key projection preserves original match operands
+in the relationship basis when it replaces business endpoints with generated keys. A Logical input of a
 Dimensional pair only needs the pair's System to feed it. Validation lists every
 System in scope and runs one once an Entity has its saved Mapping.
+Code/Validation source records carry active registered `source_system_bindings` for
+modeled lookup parents. These resolve a Mapping's explicit foreign-System namespace;
+they neither establish a join nor add target System assignments. Relevant bindings
+participate in the input digest.
 Input-currentness digests describe consistency, not production execution readiness.
 An Entity supported only by Context has no branch and therefore no Mapping; there
 is no default Mapping System.
@@ -340,6 +350,13 @@ keys belong to Databricks/framework population; source business identifiers rema
 separate mapped fields. Mapping stores transformation dependencies; external Process
 Groups/Processes own execution order and loads. Stable source-System sorting is
 not business precedence.
+Model projection raises child dependency orders above their parents, including saved
+dependents of a changed Entity; higher intentional orders and locks remain protected.
+Mapping readiness uses the active relationship graph and saved orders as lower bounds,
+and reconciliation persists the required order. Regenerate all affected parent and
+child Mappings together: unselected saved Mappings are not rewritten. A self-reference
+or cycle in the target's ancestry blocks Mapping until its loading strategy is resolved;
+unrelated cycles do not block it. Ordering alone cannot provide a second load pass.
 
 Code storage is independent of artifact format: `table` requires inline content;
 `git` may omit it. Repository, commit/path and entry point are nullable unrestricted
@@ -348,6 +365,15 @@ these fields. Code-context freshness includes storage metadata as well as the in
 content digest; it does not inspect Git contents. Web SQL generation/downloads remain
 table-only and regeneration preserves Git artifacts. Source changes describe fresh
 installs, not an upgrade of an installed database.
+
+The SQL handoff uses schema.table references, unqualified temporary-view stages and
+one final explicit-column SELECT. The runtime sets the catalog and replaces the bare
+numeric token wid_GDSBatchID before execution; generated SQL declares no widgets or
+parameters. It owns audit/history population, surrogate generation and target loads.
+Mapping records the driver batch and same-load Bronze join restrictions separately
+from parent key/version predicates. Complex rowsets keep their supported CTEs,
+reductions, windows and aligned branches. Missing match or execution rules remain
+review findings; a source identifier never substitutes for a generated parent key.
 
 SQL/orchestration authoring rules belong in the Code Prompt. Frozen run facts are
 structured `artifact_requirements`; validators enforce layout, target/System

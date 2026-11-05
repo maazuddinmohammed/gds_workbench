@@ -638,6 +638,9 @@ def _no_op_candidate() -> JsonValue:
     relationship = cast(list[dict[str, JsonValue]], candidate["relationships"])[0]
     relationship["from_dimensional_attribute_name"] = "Bill To Customer key"
     relationship["to_dimensional_attribute_name"] = "Customer Dimension key"
+    relationship["dimensional_relationship_basis"] = (
+        _applied_dimensional_section().relationships[0].dimensional_relationship_basis
+    )
     return cast(JsonValue, candidate)
 
 

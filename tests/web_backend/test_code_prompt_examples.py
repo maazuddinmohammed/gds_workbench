@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sqlite3
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, cast
@@ -75,22 +76,26 @@ async def test_review_example_delivers_complete_inputs_and_valid_sql() -> None:
         (
             0,
             ("CRM",),
-            1,
+            2,
             ("SourceCustomerID", "SourceSystemID"),
             {("bronze_crm", "customer")},
         ),
         (
             1,
             ("ERP",),
-            1,
+            2,
             (
                 "SourceOrderLineID",
                 "BillToCustomerID",
-                "ShipToCustomerNumber",
+                "ShipToCustomerID",
                 "NetAmount",
                 "SourceSystemID",
             ),
-            {("bronze_erp", "order_line"), ("silver", "Customer")},
+            {
+                ("bronze_erp", "order_line"),
+                ("bronze_erp", "line_adjustment"),
+                ("silver", "Customer"),
+            },
         ),
         (
             2,
@@ -102,7 +107,7 @@ async def test_review_example_delivers_complete_inputs_and_valid_sql() -> None:
         (
             3,
             ("CRM",),
-            1,
+            2,
             ("SourceCustomerID", "CustomerName"),
             {("bronze_crm", "customer")},
         ),
@@ -186,8 +191,18 @@ async def test_sql_examples_parse_and_pass_real_artifact_validation(
             if statement
             for join in statement.find_all(exp.Join)
         ]
-        assert len(joins) == 2
-        for join, role in zip(joins, ("bill", "ship"), strict=True):
+        assert len(joins) == 3
+        adjustment = joins[0]
+        assert adjustment.side == "LEFT" and adjustment.this.alias == "adj"
+        assert {
+            (column.table, column.name)
+            for column in adjustment.args["on"].find_all(exp.Column)
+        } == {
+            (alias, name)
+            for alias in ("adj", "l")
+            for name in ("order_line_id", "instance_code", "GDSBatchID")
+        }
+        for join, role in zip(joins[1:], ("bill", "ship"), strict=True):
             assert join.side == "LEFT"
             assert join.this.alias == role
             predicate = join.args["on"]
@@ -195,30 +210,123 @@ async def test_sql_examples_parse_and_pass_real_artifact_validation(
                 (role, "SourceCustomerNumber"),
                 ("l", f"{role}_to_number"),
                 (role, "SourceSystemID"),
+                (role, "InstanceCode"),
+                ("l", "instance_code"),
             }
             assert {literal.this for literal in predicate.find_all(exp.Literal)} == {"22"}
             assert (predicate.find(exp.Trim) is not None) == (role == "bill")
-        assert isinstance(final, exp.Select)
+        stage = statements[0]
+        assert isinstance(stage, exp.Create) and isinstance(stage.expression, exp.Select)
+        projection = stage.expression
         role_outputs = {
             item.alias: (item.this.table, item.this.name)
-            for item in final.selects
+            for item in projection.selects
             if isinstance(item, exp.Alias) and isinstance(item.this, exp.Column)
         }
         assert role_outputs == {
             "BillToCustomerID": ("bill", "CustomerID"),
-            "ShipToCustomerNumber": ("ship", "SourceCustomerNumber"),
+            "ShipToCustomerID": ("ship", "CustomerID"),
         }
-        where = final.args.get("where")
+        where = projection.args.get("where")
         assert isinstance(where, exp.Where)
-        assert {(col.table, col.name) for col in where.find_all(exp.Column)} == {("l", "status")}
+        assert {(col.table, col.name) for col in where.find_all(exp.Column)} == {
+            ("l", "status"),
+            ("l", "GDSBatchID"),
+            ("", "wid_GDSBatchID"),
+        }
     elif example_index == 3:
-        assert isinstance(final, exp.Select)
-        placeholder = final.selects[1]
+        stage = statements[0]
+        assert isinstance(stage, exp.Create) and isinstance(stage.expression, exp.Select)
+        placeholder = stage.expression.selects[1]
         assert isinstance(placeholder, exp.Alias)
         assert isinstance(placeholder.this, exp.Cast)
         assert isinstance(placeholder.this.this, exp.Null)
     elif example_index == 2:
         assert isinstance(final, exp.Union) and final.args.get("distinct") is False
+
+
+def test_role_lookup_example_executes_with_batch_and_complete_parent_key() -> None:
+    # Exercise the maintained prompt example through the supplied runner's exact
+    # substitution contract. All data and SQLite schemas live only in memory.
+    sql = SQL_EXAMPLES[1]
+    assert "wid_GDSBatchID" in sql
+    statements = parse(
+        sql.replace("wid_GDSBatchID", "42"),
+        read="databricks",
+        error_level=ErrorLevel.RAISE,
+    )
+    with sqlite3.connect(":memory:") as connection:
+        connection.executescript(
+            """
+            ATTACH DATABASE ':memory:' AS bronze_erp;
+            ATTACH DATABASE ':memory:' AS silver;
+            CREATE TABLE bronze_erp.order_line (
+                order_line_id INTEGER, instance_code TEXT, bill_to_number TEXT,
+                ship_to_number TEXT, quantity NUMERIC, unit_price NUMERIC,
+                status TEXT, GDSBatchID INTEGER
+            );
+            CREATE TABLE bronze_erp.line_adjustment (
+                order_line_id INTEGER, instance_code TEXT, discount_amount NUMERIC,
+                GDSBatchID INTEGER
+            );
+            CREATE TABLE silver.Customer (
+                CustomerID INTEGER, SourceCustomerNumber TEXT, InstanceCode TEXT,
+                SourceSystemID INTEGER, GDSBatchID INTEGER
+            );
+            """
+        )
+        connection.executemany(
+            "INSERT INTO bronze_erp.order_line VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                (1, "EAST", " C1 ", "C2", 2, 10, "posted", 42),
+                (1, "EAST", " C1 ", "C2", 2, 99, "posted", 41),
+                (2, "EAST", "MISSING", "C2", 1, 15, "posted", 42),
+                (3, "WEST", " C1 ", "C2", 1, 40, "posted", 42),
+                (4, "EAST", "C1", "C2", 1, 50, "draft", 42),
+            ),
+        )
+        connection.executemany(
+            "INSERT INTO bronze_erp.line_adjustment VALUES (?, ?, ?, ?)",
+            (
+                (1, "EAST", 3, 42),
+                (1, "EAST", 9, 41),
+                (1, "WEST", 8, 42),
+                (3, "WEST", 5, 42),
+            ),
+        )
+        connection.executemany(
+            "INSERT INTO silver.Customer VALUES (?, ?, ?, ?, ?)",
+            (
+                (101, "C1", "EAST", 22, 7),
+                (102, "C2", "EAST", 22, 12),
+                (301, "C1", "WEST", 22, 5),
+                (302, "C2", "WEST", 22, 6),
+                (901, "C1", "EAST", 11, 42),
+                (902, "C2", "EAST", 11, 42),
+            ),
+        )
+        for statement in statements[:-1]:
+            assert isinstance(statement, exp.Create)
+            # SQLite lacks OR REPLACE VIEW. The isolated database is empty, so
+            # removing that flag preserves this example's create semantics.
+            local_stage = statement.copy()
+            local_stage.set("replace", False)
+            connection.execute(local_stage.sql(dialect="sqlite"))
+        final = statements[-1]
+        assert isinstance(final, exp.Query)
+        cursor = connection.execute(final.sql(dialect="sqlite"))
+        assert tuple(column[0] for column in cursor.description) == (
+            "SourceOrderLineID",
+            "BillToCustomerID",
+            "ShipToCustomerID",
+            "NetAmount",
+            "SourceSystemID",
+        )
+        assert sorted(cursor.fetchall()) == [
+            (1, 101, 102, 17, 22),
+            (2, None, 102, 15, 22),
+            (3, 301, 302, 35, 22),
+        ]
 
 
 def test_context_example_matches_direct_sql_and_preserves_source_identity() -> None:
@@ -279,7 +387,9 @@ def test_context_example_matches_direct_sql_and_preserves_source_identity() -> N
         item["transformation"]["default_record"] is None for item in attribute_mappings
     )
     sample = parse(object_mapping["transformation"]["sample_query"], read="databricks")
-    assert sample == parse(SQL_EXAMPLES[0], read="databricks")
+    generated = parse(SQL_EXAMPLES[0], read="databricks")
+    assert isinstance(generated[0], exp.Create)
+    assert sample == [generated[0].expression]
     final = sample[-1]
     assert isinstance(final, exp.Select)
     assert final.named_selects == [

@@ -7,6 +7,22 @@ from .mapping_input_schemas import MAPPING_EVIDENCE_KINDS, mapping_input_schemas
 
 _MAPPING_TEMPLATES_SCHEMA = mapping_input_schemas()["mapping_templates"]
 
+_LOOKUP_SYSTEM_BINDINGS_SCHEMA = {
+    "type": "array",
+    "description": "Registered source-System namespace values for this modeled lookup. "
+    "These are parameter bindings, not target branch assignments or evidence of a join.",
+    "items": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "system_code": {"type": "string", "minLength": 1, "maxLength": 100},
+            "system_name": {"type": "string", "minLength": 1, "maxLength": 200},
+            "source_system_value": {"type": "integer", "minimum": 1},
+        },
+        "required": ["system_code", "system_name", "source_system_value"],
+    },
+}
+
 CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
     "mapping": {
         "mapping_route": {
@@ -743,6 +759,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             "is_locked": {"title": "Is Locked", "type": "boolean"},
                             "object": {"$ref": "#/$defs/SqlSourceObject"},
                             "source_system_code": {"type": "string", "minLength": 1},
+                            "source_system_bindings": _LOOKUP_SYSTEM_BINDINGS_SCHEMA,
                         },
                         "required": [
                             "role",
@@ -1582,6 +1599,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             "is_locked": {"title": "Is Locked", "type": "boolean"},
                             "object": {"$ref": "#/$defs/source_metadata_SqlSourceObject"},
                             "source_system_code": {"type": "string", "minLength": 1},
+                            "source_system_bindings": _LOOKUP_SYSTEM_BINDINGS_SCHEMA,
                         },
                         "required": [
                             "role",

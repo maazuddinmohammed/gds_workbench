@@ -39,18 +39,18 @@ This is the data you work with. The examples only explain the terms; they are no
 
 ## [S3] Build one rowset per mapped System
 
-You receive one target, its columns in ordinal order, the System assignments and the applied Mapping. Work from two things: the ordered field rules that give the SELECT list, and the Object rule that supplies FROM, joins, filters and changes of grain. For a simple driver with several lookups this can be one SELECT.
+You receive one target, its columns in ordinal order, the System assignments and the applied Mapping. Work from two things: the ordered field rules that give the SELECT list, and the Object rule that supplies FROM, joins, filters and changes of grain. For a simple driver with several lookups, create one temporary view from that SELECT and finish with its explicit-column SELECT.
 
 1. Match the Object document and each Attribute document by System and schema-qualified target identity. Interpret their fields using the supplied `mapping_templates` entry with the saved `output_template_code`, including inactive definitions. Older and custom documents may use other fields. If a definition is missing, translate only the rules whose meaning is clear.
 2. Read the driving population from `source_tables`, `filter_criteria` and `sample_query`. A clear join in the sample query is a mapped join. The standard sample can already contain the ordered projection assembled from the field rules. Reuse it where it agrees. Explicit field rules and filters take precedence over the sample. For each role, preserve the applied match operands, comparison, scope, time and unmatched-row behavior. Keep optional parent filters in ON. Apply each parameter only to inputs its rule names.
 3. In target order, translate each active Mapping-owned field's `transformation_logic` using its `source_columns`. Apply a `default_record` fallback only when stated. Null, blank and empty rule documents are missing; false and zero are values. Preserve identifier formatting, leading zeros, casts, precision/scale and source time. A plain cast may reconcile an exactly lossless type difference. Report an unexplained narrowing or format-dependent conversion.
-4. Resolve relations against the provided source metadata. Use actual executable columns and schema.table references with the runtime catalog. Keep temporary views unqualified and quote identifiers as needed. If a necessary foreign catalog cannot be addressed under the runtime convention, treat that input as unavailable. Eligible sources and similar names do not establish a join.
-5. Finish with the explicit SELECT in the mapped output order through `SourceSystemID` when the frozen target includes that field. Always follow the declared target fields. For a lookup, project its mapped return Attribute under the child's target alias. The match operands and returned value can differ. Use a distinct alias per role. For a multi-step transformation use CTEs or create temporary views before their first use in the same file.
+4. Resolve relations against the provided source metadata. Use actual executable columns and schema.table references only. Never emit a catalog qualifier or USE CATALOG; the framework has already set it. Keep temporary views unqualified and quote identifiers as needed. If a necessary foreign catalog cannot be addressed under the runtime convention, treat that input as unavailable. Eligible sources and similar names do not establish a join.
+5. Finish with the explicit SELECT in the mapped output order through `SourceSystemID` when the frozen target includes that field. Always follow the declared target fields. For a lookup, project its mapped return Attribute under the child's target alias. The match operands and returned value can differ. Use a distinct alias per role. Create or replace an unqualified temporary view for the prepared rowset, then return its explicit columns in the last SELECT. For multi-step transformations use CTEs or ordered temporary views before their first use in the same file. Preserve aggregation-before-join, window/tie rules, conditional expressions, temporal predicates and aligned UNION branches from Mapping; do not flatten them into one-to-one copies.
 
 ## [S4] Population, Systems and missing rules
 
 - Follow active target metadata and its `population` ownership. Under standard policy, omit the own generated surrogate, nine framework audit fields and applicable Type 2 fields. Keep mapped foreign keys and source provenance fields. Never generate an own surrogate or replace a missing one with a source ID.
-- When declared on the target, `SourceSystemID` belongs to the projection. Bind the registered `source_system_value` to its declared type wherever the branch's Mapping uses its placeholder, including predicates. Preserve a mapped Silver provenance field where it supplies the value. Never substitute a lake code, guessed number or NULL.
+- When declared on the target, `SourceSystemID` belongs to the projection. Bind the registered `source_system_value` to its declared type wherever the branch's Mapping uses its placeholder, including predicates. Preserve a mapped Silver provenance field where it supplies the value. Never substitute a lake code, guessed number or NULL. A lookup can use a different originating System. Its get_code_sources record carries `source_system_bindings` (also in directory_only results): use that registered value for a parent namespace placeholder only when Mapping names that System. These bindings do not add target System assignments or prove a join.
 - `artifact_requirements` fixes layout. For `per_system`, produce one self-contained transformation per selected System. For `combined`, align the branches by target name, order and type. Combine by the approved rule, or UNION ALL when the natural key or target grain includes SourceSystemID. Keep the mapped System predicate on a System-local key. Use the applied scope for a conformed reference with a global key. Sharing a table does not establish its row filter. Do not infer matching, precedence or deduplication.
 - With Attribute-only Mapping, read one evidenced non-lookup driver directly only when its rows already have the required target population and grain. Field expressions establish values, not which rows qualify. If a required inclusion rule is missing, or several drivers are plausible, use the unsupported-rowset result below and retain supported field rules for review. An unsupported optional lookup alone leaves only its dependent fields unresolved.
 - For a missing Mapping-owned value, use `CAST(NULL AS declared_type)` under its ordered alias, even for a required column. For an unsupported driving rowset or cross-System combination, retain grounded local stages and finish the affected output with a zero-row typed-NULL projection (`WHERE FALSE`). Supply reviewable SQL with `missing_requirement_evidence` for gaps, unsafe conversions or unmet requirements.
@@ -58,9 +58,9 @@ You receive one target, its columns in ordinal order, the System assignments and
 
 ## [S5] Runtime and evidence
 
-The external framework supplies the catalog and confirmed parameters, consumes the last SELECT, loads the target and handles configured history. Preserve Mapping dependencies. This stage authors SQL only. Allow reads and unqualified temporary views with explicit columns; no persistent DDL, DML, MERGE, SELECT * or alias.*, comments, TODOs or notebook commands. COUNT(*) is valid. Separate statements with semicolons. Each file declares its own temporary state.
+The external framework sets the catalog, reads this SQL file, replaces the literal text `wid_GDSBatchID` with the numeric run batch, executes the temporary-view stages, consumes the last SELECT as a DataFrame, adds audit/history fields and loads/merges the target. Use the bare `wid_GDSBatchID` token in mapped numeric batch predicates. Never emit `:batch_id`, `${...}`, Python interpolation, widget declarations or a profiling batch literal. Translate a mapped current-run batch placeholder to this confirmed token; preserve which input it filters. Do not invent a predicate where Mapping lacks its population rule. Bronze helpers in the same load match the driver's batch in ON along with the full business key/instance. Silver/Gold parent aliases are not restricted to that batch unless Mapping explicitly requires a different lookup population. Preserve Mapping dependencies. This stage authors SQL only. Allow reads and unqualified temporary views with explicit columns; no persistent DDL, DML, MERGE, SELECT * or alias.*, comments, TODOs or notebook commands. COUNT(*) is valid. Separate statements with semicolons. Each file declares its own temporary state.
 
-Read missing Object and Attribute transformations first, starting with {}. For source metadata, request only the sources used by the applied Mapping. Send their five-part identities together in `get_code_sources.source_object_keys`. Include `attribute_names` in each key for the columns needed by projections, joins, filters and grouping. When a modeled reference, SQL-only rule or custom document needs its source identity resolved, use `get_code_sources` with `{"directory_only":true}` and match the registered headers. A source key without `attribute_names` reads that table's complete columns when the rule needs them. Finish each selection with its own cursor alone until is_complete. Do not reread inline target_metadata or source_systems. Context records can supply SQL form and runtime parameter bindings. A new business rule first needs applied Mapping. Profile/enrichment claims or extraction code never establish SQL logic or masking. Never add TRY_CAST, defaults, deduplication or history maintenance without an explicit rule.
+Read missing Object and Attribute transformations first, starting with {}. For source metadata, request only the sources used by the applied Mapping. Send their five-part identities together in `get_code_sources.source_object_keys`. Include `attribute_names` in each key for the columns needed by projections, joins, filters and grouping. When a modeled reference, SQL-only rule or custom document needs its source identity resolved, use `get_code_sources` with `{"directory_only":true}` and match the registered headers. A source key without `attribute_names` reads that table's complete columns when the rule needs them. Finish each selection with its own cursor alone until is_complete. Do not reread inline target_metadata or source_systems. Context records can supply SQL form and explain additional supported runtime behavior. The shown framework performs the literal batch replacement above; an unbound additional parameter is a review gap. A new business rule first needs applied Mapping. Profile/enrichment claims or extraction code never establish SQL logic or masking. Never add TRY_CAST, defaults, deduplication or history maintenance without an explicit rule.
 
 ## [S6] Deliver the artifact
 
@@ -149,33 +149,46 @@ Synthetic examples. Use only the rules and coordinates of the selected target. T
 }
 ```
 
-Example 1. Direct projection from the applied Mapping above.
+Example 1. An explicitly unbatched direct projection from the applied Mapping above.
 
 ```sql
+CREATE OR REPLACE TEMPORARY VIEW temp_customer AS
 SELECT
     CAST(c.customer_id AS BIGINT) AS SourceCustomerID,
     CAST(11 AS BIGINT) AS SourceSystemID
 FROM bronze_crm.customer AS c;
+
+SELECT SourceCustomerID, SourceSystemID FROM temp_customer;
 ```
 
-Example 2. Two optional customer roles use the same parent and separate child business numbers. Mapping trims the billing number, matches the shipping number exactly and returns its matched natural key. It requires posted lines, a calculated line amount and ERP provenance 22.
+Example 2. Mapping reads posted order lines in the run batch. Both optional customer roles match business numbers within InstanceCode and ERP System 22, returning generated CustomerID values even when those customers loaded earlier. Billing numbers are trimmed; shipping numbers are exact. There is at most one adjustment per line, instance and batch; subtract its discount, using zero only when that optional adjustment is absent. Missing customers keep the line with a null role key.
 
 ```sql
+CREATE OR REPLACE TEMPORARY VIEW temp_order_line AS
 SELECT
     CAST(l.order_line_id AS BIGINT) AS SourceOrderLineID,
     bill.CustomerID AS BillToCustomerID,
-    ship.SourceCustomerNumber AS ShipToCustomerNumber,
-    CAST(l.quantity * l.unit_price AS DECIMAL(18, 2)) AS NetAmount,
+    ship.CustomerID AS ShipToCustomerID,
+    CAST(l.quantity * l.unit_price - COALESCE(adj.discount_amount, 0) AS DECIMAL(18, 2)) AS NetAmount,
     CAST(22 AS BIGINT) AS SourceSystemID
 FROM bronze_erp.order_line AS l
+LEFT JOIN bronze_erp.line_adjustment AS adj
+    ON adj.order_line_id = l.order_line_id
+    AND adj.instance_code = l.instance_code
+    AND adj.GDSBatchID = l.GDSBatchID
 LEFT JOIN silver.Customer AS bill
-    ON bill.SourceCustomerNumber = TRIM(l.bill_to_number) AND bill.SourceSystemID = 22
+    ON bill.SourceCustomerNumber = TRIM(l.bill_to_number)
+    AND bill.InstanceCode = l.instance_code AND bill.SourceSystemID = 22
 LEFT JOIN silver.Customer AS ship
-    ON ship.SourceCustomerNumber = l.ship_to_number AND ship.SourceSystemID = 22
-WHERE l.status = 'posted';
+    ON ship.SourceCustomerNumber = l.ship_to_number
+    AND ship.InstanceCode = l.instance_code AND ship.SourceSystemID = 22
+WHERE l.status = 'posted' AND l.GDSBatchID = wid_GDSBatchID;
+
+SELECT SourceOrderLineID, BillToCustomerID, ShipToCustomerID, NetAmount, SourceSystemID
+FROM temp_order_line;
 ```
 
-Example 3. These independent branches use the grain (SourceSystemID, SourceCustomerID). Each stage prepares its own source.
+Example 3. These independent, explicitly unbatched branches use the grain (SourceSystemID, SourceCustomerID). Each stage prepares its own source.
 
 ```sql
 CREATE OR REPLACE TEMPORARY VIEW temp_customer_crm AS
@@ -191,13 +204,16 @@ UNION ALL
 SELECT SourceCustomerID, SourceSystemID FROM temp_customer_erp;
 ```
 
-Example 4. This custom target declares only SourceCustomerID and CustomerName. The CRM driver is known, but the CustomerName rule is blank. Mark the result for review and preserve the ordered field.
+Example 4. This custom target declares only SourceCustomerID and CustomerName. The unbatched CRM driver is known, but the CustomerName rule is blank. Mark the result for review and preserve the ordered field.
 
 ```sql
+CREATE OR REPLACE TEMPORARY VIEW temp_customer_review AS
 SELECT
     CAST(c.customer_id AS BIGINT) AS SourceCustomerID,
     CAST(NULL AS STRING) AS CustomerName
 FROM bronze_crm.customer AS c;
+
+SELECT SourceCustomerID, CustomerName FROM temp_customer_review;
 ```
 
 <!-- ===== INSTRUCTION PROMPT ===== -->
@@ -210,10 +226,10 @@ SQL safety, coverage and output contracts.
 ## [I2] Method
 
 1. Finish the required reader pages. Match the applied Object and Attribute rules by
-   System, target identity and template. Identify the driving input, branch filters,
+   System, target identity and template. Identify the driving input, literal batch binding, batch-aligned Bronze helpers, branch filters,
    parent roles and output columns.
 2. Translate each branch. Check each parent alias, key, System and time condition
-   against its Mapping. Keep supported rows and field rules when a separate lookup
+   against its Mapping. Confirm every generated-key foreign key comes from its parent lookup, not the child business identifier. Keep supported rows and field rules when a separate lookup
    is unresolved. Use the partial Mapping policy for the gap.
 3. Verify target order, population, file layout, protected names and one assignment
    per selected System. Return only the required artifact JSON.

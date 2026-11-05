@@ -571,6 +571,111 @@ def test_complete_gold_projection_is_idempotent_with_existing_fact_foreign_key()
     assert second == ()
 
 
+@pytest.mark.parametrize("parent_is_surrogate", [False, True])
+def test_foreign_key_projection_preserves_each_role_lookup_operands(
+    parent_is_surrogate: bool,
+) -> None:
+    """Rebinding to generated keys must not erase the join the model authored."""
+    parent = _business_attribute().model_copy(
+        update={
+            "dimensional_attribute_name": "CustomerNumber",
+            "dimensional_attribute_is_natural_key": True,
+            "dimensional_attribute_is_nullable": False,
+        }
+    )
+    roles = (
+        ("Bill To Customer", "BillingCustomerNumber"),
+        ("Ship To Customer", "ShippingCustomerNumber"),
+    )
+    relationships = [
+        _relationship(role_name=role).model_copy(
+            update={
+                "from_dimensional_attribute_name": operand,
+                "to_dimensional_attribute_name": (
+                    "Customer Dimension key" if parent_is_surrogate else "CustomerNumber"
+                ),
+                "dimensional_relationship_basis": (
+                    "Use the source System namespace and the version at the order date."
+                ),
+            }
+        )
+        for role, operand in roles
+    ]
+    changes = project_dimensional_gold_policy(
+        changes=(
+            StageProjectChange(
+                dataset="dimensional_entity",
+                records=[
+                    _entity().model_dump(mode="json"),
+                    _fact().model_dump(mode="json"),
+                ],
+            ),
+            StageProjectChange(
+                dataset="dimensional_attribute",
+                records=[
+                    parent.model_dump(mode="json"),
+                    *(
+                        _fact_business_attribute(nullable=True)
+                        .model_copy(update={"dimensional_attribute_name": operand})
+                        .model_dump(mode="json")
+                        for _, operand in roles
+                    ),
+                ],
+            ),
+            StageProjectChange(
+                dataset="dimensional_relationship",
+                records=[row.model_dump(mode="json") for row in relationships],
+            ),
+        ),
+        applied=None,
+        raw_technical_template=_technical_template(),
+        raw_audit_template=_audit_template(),
+    )
+    result = project_dimensional_foreign_key_policy(
+        changes=changes, applied=None, raw_technical_template=_technical_template()
+    )
+    projected = next(
+        change.records for change in result if change.dataset == "dimensional_relationship"
+    )
+    for row, (role, operand) in zip(projected, roles, strict=True):
+        assert row["from_dimensional_attribute_name"] == f"{role} key"
+        assert row["to_dimensional_attribute_name"] == "Customer Dimension key"
+        basis = str(row["dimensional_relationship_basis"])
+        assert operand in basis
+        if parent_is_surrogate:
+            assert "Resolve the parent's business-key match" in basis
+            assert " matches " not in basis
+        else:
+            assert "gold.Customer Dimension.CustomerNumber" in basis
+        assert "Sales Fact" in basis and "Customer Dimension" in basis
+        assert "Use the source System namespace and the version at the order date." in basis
+        other_operand = next(value for _, value in roles if value != operand)
+        assert other_operand not in basis
+
+    by_dataset = {change.dataset: tuple(change.records) for change in result}
+    applied = DimensionalSection.model_validate(
+        {
+            "entities": by_dataset["dimensional_entity"],
+            "attributes": by_dataset["dimensional_attribute"],
+            "relationships": by_dataset["dimensional_relationship"],
+        },
+        strict=False,
+    )
+    # Replaying an already-bound relationship must not invent a new business key
+    # or append its generated endpoints as another join rule.
+    replay = project_dimensional_foreign_key_policy(
+        changes=(StageProjectChange(dataset="dimensional_relationship", records=list(projected)),),
+        applied=applied,
+        raw_technical_template=_technical_template(),
+    )
+    replayed = next(
+        change.records for change in replay if change.dataset == "dimensional_relationship"
+    )
+    assert [row["dimensional_relationship_basis"] for row in replayed] == [
+        row["dimensional_relationship_basis"] for row in projected
+    ]
+
+
 def test_foreign_key_projection_uses_dimension_name_without_role() -> None:
     first = project_dimensional_gold_policy(
         changes=(
@@ -955,6 +1060,48 @@ def test_foreign_key_projection_keeps_each_role_playing_edge_on_its_own_key() ->
     assert fact_columns["Alpha Customer key"] == 3
     assert fact_columns["Bill To Customer key"] == 4
     assert fact_columns["Loaded At"] == 5
+
+
+def test_foreign_key_projection_preserves_locked_relationship_basis() -> None:
+    baseline = _projected_baseline()
+    protected = baseline.relationships[0].model_copy(
+        update={"dimensional_relationship_is_locked": True}
+    )
+    baseline = baseline.model_copy(update={"relationships": (protected,)})
+    repeated = project_dimensional_foreign_key_policy(
+        changes=(
+            StageProjectChange(
+                dataset="dimensional_relationship",
+                records=[protected.model_dump(mode="json")],
+            ),
+        ),
+        applied=baseline,
+        raw_technical_template=_technical_template(),
+    )
+    assert (
+        next(
+            row["dimensional_relationship_basis"]
+            for change in repeated
+            if change.dataset == "dimensional_relationship"
+            for row in change.records
+        )
+        == protected.dimensional_relationship_basis
+    )
+
+    changed = _relationship().model_copy(
+        update={"dimensional_relationship_basis": "Use a different match rule."}
+    )
+    with pytest.raises(DimensionalProjectionConflictError, match="locked Dimensional Relationship"):
+        project_dimensional_foreign_key_policy(
+            changes=(
+                StageProjectChange(
+                    dataset="dimensional_relationship",
+                    records=[changed.model_dump(mode="json")],
+                ),
+            ),
+            applied=baseline,
+            raw_technical_template=_technical_template(),
+        )
 
 
 def test_foreign_key_projection_cannot_take_over_a_business_column() -> None:

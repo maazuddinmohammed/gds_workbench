@@ -32,6 +32,8 @@ MAPPING_EVIDENCE_KINDS = [
     "source_logical_entity",
     "source_logical_attribute",
     "source_logical_relationship",
+    "source_dimensional_entity",
+    "source_dimensional_attribute",
     "source_object_mapping",
     "source_attribute_mapping",
     "source_mapping_template",

@@ -30,6 +30,27 @@ from jsonschema import Draft202012Validator
 from tests.web_backend.mapping_fixtures import mapping_preparation
 
 
+@pytest.mark.parametrize("batch", [None, "GDSBatchID", "absent"])
+def test_mapping_basis_preserves_batch_registration_state(batch: str | None) -> None:
+    preparation = mapping_preparation()
+    context = build_mapping_execution_context(
+        preparation=preparation, execution_mode="one_shot"
+    ).embedded_context
+    assert isinstance(context, dict)
+    values = cast(dict[str, Any], context["values"])
+    source = values["source_evidence"][0]["object"]
+    if batch == "absent":
+        source.pop("batch_attribute_name", None)
+    else:
+        source["batch_attribute_name"] = batch
+    card = next(row["record"] for row in compact_mapping_basis(values) if row["kind"] == "source")
+    if batch == "absent":
+        assert "batch_attribute_name" not in card
+    else:
+        assert "batch_attribute_name" in card
+        assert card["batch_attribute_name"] == batch
+
+
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
 @pytest.mark.parametrize("entity_type", ["logical_entity", "dimensional_entity"])
 def test_mapping_inputs_preserve_actual_pair_and_evidence(

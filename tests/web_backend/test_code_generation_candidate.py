@@ -484,3 +484,149 @@ async def test_support_artifacts_accept_standalone_safe_sql(sql: str) -> None:
     )
     assert not (await validator.validate(candidate)).issues
     assert len(validator.parse_validated(candidate)) == 3
+
+
+@pytest.mark.parametrize("role", ("target_transformation", "support"))
+@pytest.mark.parametrize(
+    "sql",
+    (
+        "SELECT c.CustomerID FROM lake.silver.Customer AS c",
+        "SELECT c.CustomerID FROM `lake`.`silver`.`Customer` AS c",
+        "WITH customers AS (SELECT c.CustomerID FROM lake.silver.Customer AS c) "
+        "SELECT CustomerID FROM customers",
+        "SELECT CustomerID FROM "
+        "(SELECT c.CustomerID FROM lake.silver.Customer AS c) AS customers",
+        "CREATE OR REPLACE TEMPORARY VIEW customers AS "
+        "SELECT c.CustomerID FROM lake.silver.Customer AS c; "
+        "SELECT CustomerID FROM customers",
+        "SELECT c.CustomerID FROM silver.Customer AS c UNION ALL "
+        "SELECT c.CustomerID FROM lake.silver.Customer AS c",
+        "SELECT lake.silver.Customer.CustomerID FROM silver.Customer",
+    ),
+    ids=(
+        "root", "quoted", "cte", "subquery", "temporary_view", "union_branch",
+        "qualified_column",
+    ),
+)
+async def test_generation_rejects_catalog_sources_in_every_query_scope(
+    role: str, sql: str
+) -> None:
+    from atlas_mcp.domain.errors import InvalidRequestError
+
+    artifacts = [
+        _artifact("target_1", "SELECT 1 AS id", systems=["CRM", "ERP"]),
+        _artifact("target_2", "SELECT 2 AS id", systems=["MDM"]),
+    ]
+    if role == "support":
+        artifacts.append(
+            {
+                **_artifact("target_1", sql, systems=[]),
+                "artifact_name": "helper.sql",
+                "artifact_role": "support",
+            }
+        )
+    else:
+        artifacts[0]["generated_sql"] = sql
+    validator = _validator()
+    candidate = cast(JsonValue, {"artifacts": artifacts})
+
+    result = await validator.validate(candidate)
+
+    expected = (
+        "candidate.support_sql_contract"
+        if role == "support"
+        else "candidate.transformation_sql_contract"
+    )
+    assert [issue.code for issue in result.issues] == [expected]
+    with pytest.raises(InvalidRequestError, match="artifact delivery contract"):
+        validator.parse_validated(candidate)
+
+
+@pytest.mark.parametrize(
+    "sql",
+    (
+        "SELECT c.CustomerID FROM `silver`.`Customer` AS c",
+        "WITH customers AS (SELECT c.CustomerID FROM silver.Customer AS c) "
+        "SELECT CustomerID FROM customers",
+        "CREATE OR REPLACE TEMPORARY VIEW orders AS "
+        "SELECT o.OrderID FROM bronze.orders AS o "
+        "WHERE o.GDSBatchID = wid_GDSBatchID; SELECT OrderID FROM orders",
+        "SELECT o.payload.customer.name AS CustomerName FROM bronze.orders AS o",
+        "SELECT payload.customer.name.first AS FirstName FROM bronze.orders",
+    ),
+    ids=(
+        "quoted_schema", "cte", "temporary_view_with_batch_replacement",
+        "qualified_struct", "unqualified_struct",
+    ),
+)
+async def test_generation_accepts_runtime_catalog_and_batch_convention(sql: str) -> None:
+    validator = _validator()
+    candidate = cast(
+        JsonValue,
+        {
+            "artifacts": [
+                _artifact("target_1", sql, systems=["CRM", "ERP"]),
+                _artifact("target_2", "SELECT 2 AS id", systems=["MDM"]),
+            ]
+        },
+    )
+
+    assert not (await validator.validate(candidate)).issues
+    assert len(validator.parse_validated(candidate)) == 2
+
+
+@pytest.mark.parametrize("role", ("target_transformation", "support"))
+@pytest.mark.parametrize("parameter", (":batch_id", "?", "$batch_id", "${batch_id}", "@batch_id"))
+async def test_generation_rejects_unbound_sql_parameters(role: str, parameter: str) -> None:
+    from atlas_mcp.domain.errors import InvalidRequestError
+
+    sql = (
+        "CREATE OR REPLACE TEMPORARY VIEW orders AS "
+        "SELECT o.OrderID FROM bronze.orders AS o "
+        f"WHERE o.GDSBatchID = {parameter}; SELECT OrderID FROM orders"
+    )
+    artifacts = [
+        _artifact("target_1", "SELECT 1 AS id", systems=["CRM", "ERP"]),
+        _artifact("target_2", "SELECT 2 AS id", systems=["MDM"]),
+    ]
+    if role == "support":
+        artifacts.append(
+            {
+                **_artifact("target_1", sql, systems=[]),
+                "artifact_name": "helper.sql",
+                "artifact_role": "support",
+            }
+        )
+    else:
+        artifacts[0]["generated_sql"] = sql
+    candidate = cast(JsonValue, {"artifacts": artifacts})
+    validator = _validator()
+
+    result = await validator.validate(candidate)
+
+    expected = (
+        "candidate.support_sql_contract"
+        if role == "support"
+        else "candidate.transformation_sql_contract"
+    )
+    assert [issue.code for issue in result.issues] == [expected]
+    with pytest.raises(InvalidRequestError, match="artifact delivery contract"):
+        validator.parse_validated(candidate)
+
+
+async def test_generation_preserves_parameter_like_strings_and_quoted_columns() -> None:
+    candidate = cast(
+        JsonValue,
+        {
+            "artifacts": [
+                _artifact(
+                    "target_1",
+                    "SELECT ':batch_id ${label}' AS Description, o.`$value` AS Amount "
+                    "FROM bronze.orders AS o WHERE o.GDSBatchID = wid_GDSBatchID",
+                    systems=["CRM", "ERP"],
+                ),
+                _artifact("target_2", "SELECT 2 AS id", systems=["MDM"]),
+            ]
+        },
+    )
+    assert not (await _validator().validate(candidate)).issues

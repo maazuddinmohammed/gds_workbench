@@ -120,11 +120,16 @@ class DownstreamContextReaders(FrozenContextReaders):
                     self._invalid()
                 if separator:
                     rows = [
-                        row for row in rows
-                        if (row["kind"] in {"target_attribute", "source_attribute"}
-                            and row["record"].get("attribute_name") == name)
-                        or (row["kind"] == "attribute_transformation"
-                            and row["record"].get("target_attribute_name") == name)
+                        row
+                        for row in rows
+                        if (
+                            row["kind"] in {"target_attribute", "source_attribute"}
+                            and row["record"].get("attribute_name") == name
+                        )
+                        or (
+                            row["kind"] == "attribute_transformation"
+                            and row["record"].get("target_attribute_name") == name
+                        )
                     ]
                     if not rows:
                         self._invalid()
@@ -293,7 +298,10 @@ def compact_mapping_basis(
     }
     target_record = {key: value for key, value in target.items() if key != "attributes"}
     target_record.update(
-        action=readiness.get("action"), object_dependency_order=header["object_dependency_order"]
+        action=readiness.get("action"),
+        object_dependency_order=max(
+            header["object_dependency_order"], readiness.get("required_dependency_order", 0)
+        ),
     )
     if header["transformation_document"] is not None:
         target_record["saved"] = header["transformation_document"]
@@ -364,7 +372,7 @@ def compact_mapping_basis(
                             "entity_kind",
                             "grain",
                         )
-                        if key in obj and obj[key] is not None
+                        if key in obj and (obj[key] is not None or key == "batch_attribute_name")
                     },
                     "ref": ref,
                     "role": source["role"],
