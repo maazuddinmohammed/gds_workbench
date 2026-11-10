@@ -33,7 +33,7 @@ After business Attributes and any selected Source audit fields, use this shared 
 
 | Order | Column | Population |
 |---:|---|---|
-| 1 | `SourceSystemID` | Registered originating System provenance, typically Bronze `source_system_id`; SQL supplies the mapped value. |
+| 1 | `SourceSystemID` | SQL uses the originating System code to look up `SystemID` in `meta.system`. |
 | 2 | `IsDataValid` | Framework. |
 | 3 | `HashKey` | Framework. |
 | 4 | `IsActive` | Framework. |

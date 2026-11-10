@@ -1,0 +1,1306 @@
+{
+  "description": "Sum posted lines for each Dispatch. The business requirement names posted lines, but the registered status column gives no stored value. Keep the dispatch and both depot lookups. Leave ReferenceText unresolved and identify the missing rule.",
+  "values": {
+    "mapping_route": "logical_to_silver",
+    "operation": "build",
+    "target_metadata": {
+      "entity_type": "logical_entity",
+      "entity_schema_name": "silver",
+      "entity_name": "Dispatch",
+      "entity_kind": "transaction",
+      "entity_definition": "One dispatch instruction in the SHIP operational model.",
+      "grain": "One row per (SourceSystemID, InstanceCode, SourceDispatchNo). Each instance assigns its own dispatch numbers.",
+      "dependency_order": 1,
+      "status": "active",
+      "is_locked": false,
+      "attributes": [
+        {
+          "attribute_name": "DispatchID",
+          "attribute_data_type": "BIGINT",
+          "attribute_definition": "Generated dispatch identifier.",
+          "is_nullable": false,
+          "is_audit_column": false,
+          "is_surrogate_key": true,
+          "ordinal_position": 1,
+          "status": "active",
+          "is_locked": false
+        },
+        {
+          "attribute_name": "SourceDispatchNo",
+          "attribute_data_type": "STRING",
+          "attribute_definition": "Source dispatch number.",
+          "is_nullable": false,
+          "is_audit_column": false,
+          "is_surrogate_key": false,
+          "ordinal_position": 2,
+          "status": "active",
+          "is_locked": false
+        },
+        {
+          "attribute_name": "OriginDepotID",
+          "attribute_data_type": "BIGINT",
+          "attribute_definition": "Depot of departure, if resolved.",
+          "is_nullable": true,
+          "is_audit_column": false,
+          "is_surrogate_key": false,
+          "ordinal_position": 3,
+          "status": "active",
+          "is_locked": false
+        },
+        {
+          "attribute_name": "DestinationDepotID",
+          "attribute_data_type": "BIGINT",
+          "attribute_definition": "Depot of arrival, if resolved.",
+          "is_nullable": true,
+          "is_audit_column": false,
+          "is_surrogate_key": false,
+          "ordinal_position": 4,
+          "status": "active",
+          "is_locked": false
+        },
+        {
+          "attribute_name": "ReferenceText",
+          "attribute_data_type": "STRING",
+          "attribute_definition": "Dispatch reference amount formatted as text for this originating System.",
+          "is_nullable": true,
+          "is_audit_column": false,
+          "is_surrogate_key": false,
+          "ordinal_position": 5,
+          "status": "active",
+          "is_locked": false
+        },
+        {
+          "attribute_name": "SourceSystemID",
+          "attribute_data_type": "BIGINT",
+          "attribute_definition": "Identifier of the originating System.",
+          "is_nullable": false,
+          "is_audit_column": true,
+          "is_surrogate_key": false,
+          "ordinal_position": 6,
+          "status": "active",
+          "is_locked": false
+        },
+        {
+          "attribute_name": "InstanceCode",
+          "attribute_data_type": "STRING",
+          "attribute_definition": "The originating SHIP instance.",
+          "is_nullable": false,
+          "is_audit_column": false,
+          "is_surrogate_key": false,
+          "ordinal_position": 7,
+          "status": "active",
+          "is_locked": false,
+          "is_natural_key": true
+        }
+      ]
+    },
+    "source_evidence": [
+      {
+        "role": "support",
+        "rationale": "Dispatch feed supplies the driving instructions.",
+        "is_locked": false,
+        "object": {
+          "tenant_code": "DEMO",
+          "system_code": "LAKE",
+          "connection_code": "WAREHOUSE",
+          "object_schema": "bronze",
+          "object_name": "dispatch",
+          "object_description": "One header per instance and dispatch number per batch.",
+          "batch_attribute_name": "load_batch",
+          "zone_code": "bronze",
+          "is_global_data_store": true,
+          "tenant_catalog": "demo",
+          "tenant_is_active": true,
+          "system_is_active": true,
+          "connection_is_active": true,
+          "scope_is_active": true,
+          "scope_is_locked": false,
+          "is_active": true,
+          "is_locked": false,
+          "attributes": [
+            {
+              "attribute_name": "dispatch_no",
+              "attribute_data_type": "STRING",
+              "attribute_description": "Source dispatch number.",
+              "attribute_ordinal_position": 1,
+              "attribute_nullability": false,
+              "is_active": true,
+              "attribute_inferred_data_type": null
+            },
+            {
+              "attribute_name": "origin_code",
+              "attribute_data_type": "STRING",
+              "attribute_description": "Source code of depot of departure.",
+              "attribute_ordinal_position": 2,
+              "attribute_nullability": true,
+              "is_active": true,
+              "attribute_inferred_data_type": null
+            },
+            {
+              "attribute_name": "destination_code",
+              "attribute_data_type": "STRING",
+              "attribute_description": "Source code of depot of arrival.",
+              "attribute_ordinal_position": 3,
+              "attribute_nullability": true,
+              "is_active": true,
+              "attribute_inferred_data_type": null
+            },
+            {
+              "attribute_name": "load_batch",
+              "attribute_data_type": "BIGINT",
+              "attribute_description": "Feed batch number.",
+              "attribute_ordinal_position": 4,
+              "attribute_nullability": false,
+              "is_active": true,
+              "attribute_inferred_data_type": null
+            },
+            {
+              "attribute_name": "instance_code",
+              "attribute_data_type": "STRING",
+              "attribute_description": "SHIP instance that owns this dispatch.",
+              "attribute_ordinal_position": 5,
+              "attribute_nullability": false,
+              "is_active": true,
+              "attribute_inferred_data_type": "STRING"
+            }
+          ]
+        }
+      },
+      {
+        "role": "candidate",
+        "rationale": "Eligible depot directory cited by the natural key lineage of silver.Depot.",
+        "is_locked": false,
+        "object": {
+          "tenant_code": "DEMO",
+          "system_code": "LAKE",
+          "connection_code": "WAREHOUSE",
+          "object_schema": "bronze",
+          "object_name": "depot_directory",
+          "object_description": "Eligible depot directory cited by the natural key lineage of silver.Depot.",
+          "batch_attribute_name": null,
+          "zone_code": "bronze",
+          "is_global_data_store": true,
+          "tenant_catalog": "demo",
+          "tenant_is_active": true,
+          "system_is_active": true,
+          "connection_is_active": true,
+          "scope_is_active": true,
+          "scope_is_locked": false,
+          "is_active": true,
+          "is_locked": false,
+          "attributes": [
+            {
+              "attribute_name": "depot_code",
+              "attribute_data_type": "STRING",
+              "attribute_description": "Source depot code.",
+              "attribute_ordinal_position": 1,
+              "attribute_nullability": false,
+              "is_active": true,
+              "attribute_inferred_data_type": null
+            }
+          ]
+        }
+      },
+      {
+        "role": "lookup",
+        "rationale": "Active parent named by the modeled relationships; no Mapping has been authored yet.",
+        "is_locked": false,
+        "object": {
+          "entity_type": "logical_entity",
+          "entity_schema_name": "silver",
+          "entity_name": "Depot",
+          "entity_kind": "core",
+          "entity_definition": "One depot per canonical depot code and originating System.",
+          "grain": "SourceDepotCode and SourceSystemID.",
+          "dependency_order": 0,
+          "status": "active",
+          "is_locked": false,
+          "attributes": [
+            {
+              "attribute_name": "DepotID",
+              "attribute_data_type": "BIGINT",
+              "attribute_definition": "Generated depot identifier.",
+              "is_nullable": false,
+              "is_audit_column": false,
+              "is_surrogate_key": true,
+              "ordinal_position": 1,
+              "status": "active",
+              "is_locked": false,
+              "is_natural_key": false
+            },
+            {
+              "attribute_name": "SourceDepotCode",
+              "attribute_data_type": "STRING",
+              "attribute_definition": "Canonical depot code.",
+              "is_nullable": false,
+              "is_audit_column": false,
+              "is_surrogate_key": false,
+              "ordinal_position": 2,
+              "status": "active",
+              "is_locked": false,
+              "is_natural_key": true
+            },
+            {
+              "attribute_name": "SourceSystemID",
+              "attribute_data_type": "BIGINT",
+              "attribute_definition": "Identifier of the originating System.",
+              "is_nullable": false,
+              "is_audit_column": true,
+              "is_surrogate_key": false,
+              "ordinal_position": 3,
+              "status": "active",
+              "is_locked": false,
+              "is_natural_key": true
+            },
+            {
+              "attribute_name": "GDSBatchID",
+              "attribute_data_type": "BIGINT",
+              "attribute_definition": "Framework batch when the depot was last loaded.",
+              "is_nullable": false,
+              "is_audit_column": true,
+              "is_surrogate_key": false,
+              "ordinal_position": 4,
+              "status": "active",
+              "is_locked": false,
+              "is_natural_key": false
+            }
+          ]
+        }
+      },
+      {
+        "role": "support",
+        "rationale": "Multiple financial lines per dispatch and batch; aggregate posted line net amounts before joining.",
+        "is_locked": false,
+        "object": {
+          "tenant_code": "DEMO",
+          "system_code": "LAKE",
+          "connection_code": "WAREHOUSE",
+          "object_schema": "bronze",
+          "object_name": "dispatch_detail",
+          "object_description": "Posted financial lines can occur in every SHIP instance. Dispatch numbers are unique only within their instance.",
+          "batch_attribute_name": "load_batch",
+          "zone_code": "bronze",
+          "is_global_data_store": true,
+          "tenant_catalog": "demo",
+          "tenant_is_active": true,
+          "system_is_active": true,
+          "connection_is_active": true,
+          "scope_is_active": true,
+          "scope_is_locked": false,
+          "is_active": true,
+          "is_locked": false,
+          "attributes": [
+            {
+              "attribute_name": "dispatch_no",
+              "attribute_data_type": "STRING",
+              "attribute_description": "Source dispatch number.",
+              "attribute_ordinal_position": 1,
+              "attribute_nullability": false,
+              "is_active": true,
+              "attribute_inferred_data_type": null
+            },
+            {
+              "attribute_name": "load_batch",
+              "attribute_data_type": "BIGINT",
+              "attribute_description": "Feed batch number.",
+              "attribute_ordinal_position": 2,
+              "attribute_nullability": false,
+              "is_active": true,
+              "attribute_inferred_data_type": null
+            },
+            {
+              "attribute_name": "status",
+              "attribute_data_type": "STRING",
+              "attribute_description": "status",
+              "attribute_ordinal_position": 3,
+              "attribute_nullability": false,
+              "is_active": true,
+              "attribute_inferred_data_type": null
+            },
+            {
+              "attribute_name": "quantity",
+              "attribute_data_type": "BIGINT",
+              "attribute_description": "quantity",
+              "attribute_ordinal_position": 4,
+              "attribute_nullability": false,
+              "is_active": true,
+              "attribute_inferred_data_type": null
+            },
+            {
+              "attribute_name": "unit_price",
+              "attribute_data_type": "DECIMAL(14,2)",
+              "attribute_description": "unit_price",
+              "attribute_ordinal_position": 5,
+              "attribute_nullability": false,
+              "is_active": true,
+              "attribute_inferred_data_type": null
+            },
+            {
+              "attribute_name": "discount",
+              "attribute_data_type": "DECIMAL(14,2)",
+              "attribute_description": "discount",
+              "attribute_ordinal_position": 6,
+              "attribute_nullability": false,
+              "is_active": true,
+              "attribute_inferred_data_type": null
+            },
+            {
+              "attribute_name": "instance_code",
+              "attribute_data_type": "STRING",
+              "attribute_description": "SHIP instance that owns this dispatch.",
+              "attribute_ordinal_position": 7,
+              "attribute_nullability": false,
+              "is_active": true,
+              "attribute_inferred_data_type": "STRING"
+            }
+          ]
+        }
+      }
+    ],
+    "existing_mapping": [
+      {
+        "modeled_entity": {
+          "entity_type": "logical_entity",
+          "entity_schema_name": "silver",
+          "entity_name": "Dispatch",
+          "entity_kind": "transaction",
+          "entity_definition": "One dispatch instruction in the SHIP operational model.",
+          "grain": "One row per (SourceSystemID, InstanceCode, SourceDispatchNo). Each instance assigns its own dispatch numbers.",
+          "dependency_order": 1,
+          "status": "active",
+          "is_locked": false,
+          "attributes": [
+            {
+              "attribute_name": "DispatchID",
+              "attribute_data_type": "BIGINT",
+              "attribute_definition": "Generated dispatch identifier.",
+              "is_nullable": false,
+              "is_audit_column": false,
+              "is_surrogate_key": true,
+              "ordinal_position": 1,
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "attribute_name": "SourceDispatchNo",
+              "attribute_data_type": "STRING",
+              "attribute_definition": "Source dispatch number.",
+              "is_nullable": false,
+              "is_audit_column": false,
+              "is_surrogate_key": false,
+              "ordinal_position": 2,
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "attribute_name": "OriginDepotID",
+              "attribute_data_type": "BIGINT",
+              "attribute_definition": "Depot of departure, if resolved.",
+              "is_nullable": true,
+              "is_audit_column": false,
+              "is_surrogate_key": false,
+              "ordinal_position": 3,
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "attribute_name": "DestinationDepotID",
+              "attribute_data_type": "BIGINT",
+              "attribute_definition": "Depot of arrival, if resolved.",
+              "is_nullable": true,
+              "is_audit_column": false,
+              "is_surrogate_key": false,
+              "ordinal_position": 4,
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "attribute_name": "ReferenceText",
+              "attribute_data_type": "STRING",
+              "attribute_definition": "Dispatch reference amount formatted as text for this originating System.",
+              "is_nullable": true,
+              "is_audit_column": false,
+              "is_surrogate_key": false,
+              "ordinal_position": 5,
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "attribute_name": "SourceSystemID",
+              "attribute_data_type": "BIGINT",
+              "attribute_definition": "Identifier of the originating System.",
+              "is_nullable": false,
+              "is_audit_column": true,
+              "is_surrogate_key": false,
+              "ordinal_position": 6,
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "attribute_name": "InstanceCode",
+              "attribute_data_type": "STRING",
+              "attribute_definition": "The originating SHIP instance.",
+              "is_nullable": false,
+              "is_audit_column": false,
+              "is_surrogate_key": false,
+              "ordinal_position": 7,
+              "status": "active",
+              "is_locked": false,
+              "is_natural_key": true
+            }
+          ]
+        },
+        "object_dependency_order": 1,
+        "status": "active",
+        "is_locked": false,
+        "transformation_document": null,
+        "attribute_mappings": [
+          {
+            "modeled_attribute_name": "DispatchID",
+            "status": "active",
+            "is_locked": false,
+            "transformation_document": null
+          },
+          {
+            "modeled_attribute_name": "SourceDispatchNo",
+            "status": "active",
+            "is_locked": false,
+            "transformation_document": null
+          },
+          {
+            "modeled_attribute_name": "OriginDepotID",
+            "status": "active",
+            "is_locked": false,
+            "transformation_document": null
+          },
+          {
+            "modeled_attribute_name": "DestinationDepotID",
+            "status": "active",
+            "is_locked": false,
+            "transformation_document": null
+          },
+          {
+            "modeled_attribute_name": "SourceSystemID",
+            "status": "active",
+            "is_locked": false,
+            "transformation_document": null
+          },
+          {
+            "modeled_attribute_name": "ReferenceText",
+            "status": "active",
+            "is_locked": false,
+            "transformation_document": null
+          },
+          {
+            "modeled_attribute_name": "InstanceCode",
+            "status": "active",
+            "is_locked": false,
+            "transformation_document": null
+          }
+        ]
+      }
+    ],
+    "authoring_policy": {
+      "audit_columns_template": null,
+      "project_name": "Depot Dispatch",
+      "logical_entity_scd_type": "type_1",
+      "dimensional_entity_scd_type": "type_1",
+      "naming_instructions": "Use PascalCase names.",
+      "technical_columns_template": null
+    },
+    "readiness": {
+      "operation": "build",
+      "ready": true,
+      "issues": [],
+      "headers": [
+        {
+          "action": "author",
+          "attribute_actions": [
+            {
+              "action": "author",
+              "modeled_attribute_name": "DispatchID"
+            },
+            {
+              "action": "author",
+              "modeled_attribute_name": "SourceDispatchNo"
+            },
+            {
+              "action": "author",
+              "modeled_attribute_name": "OriginDepotID"
+            },
+            {
+              "action": "author",
+              "modeled_attribute_name": "DestinationDepotID"
+            },
+            {
+              "action": "author",
+              "modeled_attribute_name": "SourceSystemID"
+            },
+            {
+              "action": "author",
+              "modeled_attribute_name": "ReferenceText"
+            },
+            {
+              "modeled_attribute_name": "InstanceCode",
+              "action": "author"
+            }
+          ]
+        }
+      ]
+    },
+    "source_system": {
+      "system_code": "SHIP",
+      "system_name": "Shipment Feed",
+      "is_active": true,
+      "system_description": "Synthetic dispatch and depot feed."
+    },
+    "object_output_template": null,
+    "attribute_output_template": null,
+    "mapping_support_records": [
+      {
+        "evidence_type": "target_attribute_lineage",
+        "record": {
+          "modeled_attribute_name": "DispatchID",
+          "sources": [],
+          "is_natural_key": false,
+          "is_primary_key": true,
+          "is_surrogate_key": true
+        }
+      },
+      {
+        "evidence_type": "target_attribute_lineage",
+        "record": {
+          "modeled_attribute_name": "SourceDispatchNo",
+          "sources": [
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "DEMO",
+                "system_code": "LAKE",
+                "connection_code": "WAREHOUSE",
+                "object_schema": "bronze",
+                "object_name": "dispatch",
+                "attribute_name": "dispatch_no"
+              },
+              "rationale": null
+            }
+          ],
+          "is_natural_key": true,
+          "is_primary_key": false,
+          "is_surrogate_key": false
+        }
+      },
+      {
+        "evidence_type": "target_attribute_lineage",
+        "record": {
+          "modeled_attribute_name": "OriginDepotID",
+          "sources": [
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "DEMO",
+                "system_code": "LAKE",
+                "connection_code": "WAREHOUSE",
+                "object_schema": "bronze",
+                "object_name": "dispatch",
+                "attribute_name": "origin_code"
+              },
+              "rationale": null
+            }
+          ],
+          "is_natural_key": false,
+          "is_primary_key": false,
+          "is_surrogate_key": false
+        }
+      },
+      {
+        "evidence_type": "target_relationship",
+        "record": {
+          "from_logical_entity_schema_name": "silver",
+          "from_logical_entity_name": "Dispatch",
+          "from_logical_attribute_name": "OriginDepotID",
+          "to_logical_entity_schema_name": "silver",
+          "to_logical_entity_name": "Depot",
+          "to_logical_attribute_name": "DepotID",
+          "logical_relationship_cardinality": "many_to_one",
+          "logical_relationship_basis": "Dispatch.origin_code identifies the depot in this role."
+        }
+      },
+      {
+        "evidence_type": "target_attribute_lineage",
+        "record": {
+          "modeled_attribute_name": "DestinationDepotID",
+          "sources": [
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "DEMO",
+                "system_code": "LAKE",
+                "connection_code": "WAREHOUSE",
+                "object_schema": "bronze",
+                "object_name": "dispatch",
+                "attribute_name": "destination_code"
+              },
+              "rationale": null
+            }
+          ],
+          "is_natural_key": false,
+          "is_primary_key": false,
+          "is_surrogate_key": false
+        }
+      },
+      {
+        "evidence_type": "target_relationship",
+        "record": {
+          "from_logical_entity_schema_name": "silver",
+          "from_logical_entity_name": "Dispatch",
+          "from_logical_attribute_name": "DestinationDepotID",
+          "to_logical_entity_schema_name": "silver",
+          "to_logical_entity_name": "Depot",
+          "to_logical_attribute_name": "DepotID",
+          "logical_relationship_cardinality": "many_to_one",
+          "logical_relationship_basis": "Dispatch.destination_code identifies the depot in this role."
+        }
+      },
+      {
+        "evidence_type": "target_attribute_lineage",
+        "record": {
+          "modeled_attribute_name": "SourceSystemID",
+          "sources": [],
+          "is_natural_key": true,
+          "is_primary_key": false,
+          "is_surrogate_key": false
+        }
+      },
+      {
+        "evidence_type": "source_logical_entity",
+        "record": {
+          "logical_entity_schema_name": "silver",
+          "logical_entity_name": "Depot",
+          "logical_entity_type": "core",
+          "logical_entity_definition": "One depot per canonical depot code and originating System.",
+          "logical_entity_grain": "SourceDepotCode and SourceSystemID.",
+          "logical_entity_is_active": true,
+          "sources": [
+            {
+              "support_source_type": "object",
+              "source_object": {
+                "tenant_code": "DEMO",
+                "system_code": "LAKE",
+                "connection_code": "WAREHOUSE",
+                "object_schema": "bronze",
+                "object_name": "depot_directory"
+              },
+              "rationale": null
+            }
+          ]
+        }
+      },
+      {
+        "evidence_type": "source_logical_attribute",
+        "record": {
+          "logical_entity_schema_name": "silver",
+          "logical_entity_name": "Depot",
+          "logical_attribute_name": "DepotID",
+          "logical_attribute_data_type": "BIGINT",
+          "logical_attribute_is_natural_key": false,
+          "logical_attribute_is_surrogate_key": true,
+          "logical_attribute_is_active": true,
+          "sources": []
+        }
+      },
+      {
+        "evidence_type": "source_logical_attribute",
+        "record": {
+          "logical_entity_schema_name": "silver",
+          "logical_entity_name": "Depot",
+          "logical_attribute_name": "SourceDepotCode",
+          "logical_attribute_data_type": "STRING",
+          "logical_attribute_is_natural_key": true,
+          "logical_attribute_is_surrogate_key": false,
+          "logical_attribute_is_active": true,
+          "sources": [
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "DEMO",
+                "system_code": "LAKE",
+                "connection_code": "WAREHOUSE",
+                "object_schema": "bronze",
+                "object_name": "depot_directory",
+                "attribute_name": "depot_code"
+              },
+              "rationale": "Trim spaces and uppercase the source code."
+            }
+          ]
+        }
+      },
+      {
+        "evidence_type": "source_logical_attribute",
+        "record": {
+          "logical_entity_schema_name": "silver",
+          "logical_entity_name": "Depot",
+          "logical_attribute_name": "SourceSystemID",
+          "logical_attribute_data_type": "BIGINT",
+          "logical_attribute_is_natural_key": true,
+          "logical_attribute_is_surrogate_key": false,
+          "logical_attribute_is_active": true,
+          "sources": []
+        }
+      },
+      {
+        "evidence_type": "source_logical_attribute",
+        "record": {
+          "logical_entity_schema_name": "silver",
+          "logical_entity_name": "Depot",
+          "logical_attribute_name": "GDSBatchID",
+          "logical_attribute_data_type": "BIGINT",
+          "logical_attribute_is_natural_key": false,
+          "logical_attribute_is_surrogate_key": false,
+          "logical_attribute_is_active": true,
+          "sources": []
+        }
+      },
+      {
+        "evidence_type": "context_record",
+        "record": {
+          "context_record_id": "0e64bde2-9c4e-47f2-85f8-a9f4d6b011ce",
+          "context_group_name": "Shipment feed",
+          "context_type_name": "Mapping Requirement",
+          "source_reference": null,
+          "context_text": "Keep every dispatch in the current orchestration batch. Missing depots retain the dispatch. For ReferenceText sum quantity * unit_price - discount for the posted lines belonging to each dispatch. A missing total gives zero as a string. Duplicate lines are distinct. Depots are shared across SHIP instances; match depot code and System."
+        }
+      },
+      {
+        "evidence_type": "target_attribute_lineage",
+        "record": {
+          "modeled_attribute_name": "ReferenceText",
+          "sources": [
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "DEMO",
+                "system_code": "LAKE",
+                "connection_code": "WAREHOUSE",
+                "object_schema": "bronze",
+                "object_name": "dispatch_detail",
+                "attribute_name": "dispatch_no"
+              },
+              "rationale": "Sum posted line net amounts per dispatch in the current batch before the left join; missing total is 0; return as STRING."
+            },
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "DEMO",
+                "system_code": "LAKE",
+                "connection_code": "WAREHOUSE",
+                "object_schema": "bronze",
+                "object_name": "dispatch_detail",
+                "attribute_name": "load_batch"
+              },
+              "rationale": "Sum posted line net amounts per dispatch in the current batch before the left join; missing total is 0; return as STRING."
+            },
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "DEMO",
+                "system_code": "LAKE",
+                "connection_code": "WAREHOUSE",
+                "object_schema": "bronze",
+                "object_name": "dispatch_detail",
+                "attribute_name": "status"
+              },
+              "rationale": "Sum posted line net amounts per dispatch in the current batch before the left join; missing total is 0; return as STRING."
+            },
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "DEMO",
+                "system_code": "LAKE",
+                "connection_code": "WAREHOUSE",
+                "object_schema": "bronze",
+                "object_name": "dispatch_detail",
+                "attribute_name": "quantity"
+              },
+              "rationale": "Sum posted line net amounts per dispatch in the current batch before the left join; missing total is 0; return as STRING."
+            },
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "DEMO",
+                "system_code": "LAKE",
+                "connection_code": "WAREHOUSE",
+                "object_schema": "bronze",
+                "object_name": "dispatch_detail",
+                "attribute_name": "unit_price"
+              },
+              "rationale": "Sum posted line net amounts per dispatch in the current batch before the left join; missing total is 0; return as STRING."
+            },
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "DEMO",
+                "system_code": "LAKE",
+                "connection_code": "WAREHOUSE",
+                "object_schema": "bronze",
+                "object_name": "dispatch_detail",
+                "attribute_name": "discount"
+              },
+              "rationale": "Sum posted line net amounts per dispatch in the current batch before the left join; missing total is 0; return as STRING."
+            }
+          ],
+          "is_natural_key": false,
+          "is_primary_key": false,
+          "is_surrogate_key": false
+        }
+      },
+      {
+        "evidence_type": "target_attribute_lineage",
+        "record": {
+          "modeled_attribute_name": "InstanceCode",
+          "sources": [
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "DEMO",
+                "system_code": "LAKE",
+                "connection_code": "WAREHOUSE",
+                "object_schema": "bronze",
+                "object_name": "dispatch",
+                "attribute_name": "instance_code"
+              },
+              "rationale": null
+            }
+          ],
+          "is_natural_key": true,
+          "is_primary_key": false,
+          "is_surrogate_key": false
+        }
+      }
+    ]
+  },
+  "output_schema": {
+    "$defs": {
+      "JsonObject": {
+        "additionalProperties": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "type": "object"
+      },
+      "JsonValue": {},
+      "MappingAttributeCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "modeled_attribute_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Modeled Attribute Name",
+            "type": "string"
+          },
+          "attribute_mapping_transformation_document": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/JsonObject"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "modeled_attribute_name",
+          "attribute_mapping_transformation_document"
+        ],
+        "title": "MappingAttributeCandidate",
+        "type": "object"
+      },
+      "MappingObjectCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "object_dependency_order": {
+            "minimum": 0,
+            "title": "Object Dependency Order",
+            "type": "integer"
+          },
+          "mapping_transformation_document": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/JsonObject"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "object_dependency_order",
+          "mapping_transformation_document"
+        ],
+        "title": "MappingObjectCandidate",
+        "type": "object"
+      },
+      "MappingUnresolvedIssue": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "enum": [
+              "missing_join_evidence",
+              "missing_transformation_rule",
+              "preserved_mapping_conflict"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "modeled_attribute_name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Modeled Attribute Name"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "MappingUnresolvedIssue",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "description": "Return only the Mapping transformation content. Identity, lifecycle status, templates and provenance are derived by the backend. Partial output is valid: return supported Object and Attribute transformations and leave unsupported documents null or omit them. Missing selected transformations are cleared; locked and unselected mappings are preserved. Return no transformations when nothing is supported. Never invent rules to fill blanks. A System contributes only when it supplies a supported business rowset or business Attribute transformation. Generated surrogate keys, audit/history population, and 'omit from load select' notes alone are not a contribution. For such a pair return outcome no_applicable_source, object_mapping null and attribute_mappings []. In sample_query describe the driver, joins and shared steps. Put row filters in filter_criteria and each column's value in its own transformation_logic.",
+    "properties": {
+      "schema_version": {
+        "const": "1.0",
+        "title": "Schema Version",
+        "type": "string"
+      },
+      "outcome": {
+        "default": "mapped",
+        "description": "Use no_applicable_source with no transformations when this System has no evidenced contribution. Generated keys and framework audit/history population alone never establish a Mapping. Preserve supported partial business output.",
+        "enum": [
+          "mapped",
+          "no_applicable_source"
+        ],
+        "title": "Outcome",
+        "type": "string"
+      },
+      "issues": {
+        "default": [],
+        "items": {
+          "$ref": "#/$defs/MappingUnresolvedIssue"
+        },
+        "maxItems": 200,
+        "title": "Issues",
+        "type": "array"
+      },
+      "object_mapping": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/MappingObjectCandidate"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "attribute_mappings": {
+        "items": {
+          "$ref": "#/$defs/MappingAttributeCandidate"
+        },
+        "maxItems": 5000,
+        "title": "Attribute Mappings",
+        "type": "array"
+      }
+    },
+    "required": [
+      "schema_version",
+      "object_mapping",
+      "attribute_mappings"
+    ],
+    "title": "CompleteMappingCandidateV1",
+    "type": "object"
+  },
+  "expect": {
+    "list": "issues",
+    "key": [
+      "code",
+      "modeled_attribute_name"
+    ],
+    "expected": [
+      {
+        "code": "missing_transformation_rule",
+        "modeled_attribute_name": "ReferenceText"
+      }
+    ],
+    "forbidden": [],
+    "rowset_check": {
+      "description": "Run SQL generated from the partial Mapping on these held-out rows. Keep each instance’s dispatch, including an unmatched origin or destination. ReferenceText must be a STRING-typed NULL for every row.",
+      "sources": {
+        "bronze.dispatch": {
+          "columns": [
+            "dispatch_no",
+            "origin_code",
+            "destination_code",
+            "load_batch",
+            "instance_code"
+          ],
+          "rows": [
+            [
+              "042",
+              " aa ",
+              "bz ",
+              15,
+              "east"
+            ],
+            [
+              "042",
+              " bz",
+              "AA ",
+              15,
+              "west"
+            ],
+            [
+              "043",
+              "zz",
+              "BZ",
+              15,
+              "east"
+            ],
+            [
+              "044",
+              "AA",
+              "zz",
+              15,
+              "west"
+            ],
+            [
+              "042",
+              "AA",
+              "BZ",
+              14,
+              "east"
+            ],
+            [
+              "do-not-return",
+              "AA",
+              "BZ",
+              16,
+              "west"
+            ]
+          ]
+        },
+        "silver.Depot": {
+          "columns": [
+            "DepotID",
+            "SourceDepotCode",
+            "SourceSystemID",
+            "GDSBatchID"
+          ],
+          "rows": [
+            [
+              201,
+              "AA",
+              7,
+              14
+            ],
+            [
+              202,
+              "BZ",
+              7,
+              19
+            ],
+            [
+              301,
+              "AA",
+              8,
+              15
+            ],
+            [
+              302,
+              "BZ",
+              8,
+              15
+            ]
+          ]
+        },
+        "bronze.dispatch_detail": {
+          "columns": [
+            "dispatch_no",
+            "load_batch",
+            "status",
+            "quantity",
+            "unit_price",
+            "discount",
+            "instance_code"
+          ],
+          "rows": [
+            [
+              "042",
+              15,
+              "P",
+              2,
+              9,
+              3,
+              "east"
+            ],
+            [
+              "042",
+              15,
+              "P",
+              2,
+              9,
+              3,
+              "east"
+            ],
+            [
+              "042",
+              15,
+              "X",
+              6,
+              10,
+              0,
+              "east"
+            ],
+            [
+              "042",
+              15,
+              "P",
+              4,
+              24,
+              6,
+              "west"
+            ],
+            [
+              "042",
+              15,
+              "X",
+              5,
+              30,
+              0,
+              "west"
+            ],
+            [
+              "042",
+              15,
+              "p",
+              4,
+              60,
+              0,
+              "west"
+            ],
+            [
+              "043",
+              15,
+              "X",
+              7,
+              50,
+              0,
+              "east"
+            ],
+            [
+              "042",
+              14,
+              "P",
+              9,
+              100,
+              0,
+              "east"
+            ],
+            [
+              "042",
+              16,
+              "P",
+              9,
+              100,
+              0,
+              "west"
+            ]
+          ]
+        },
+        "bronze.depot_directory": {
+          "columns": [
+            "depot_code"
+          ],
+          "rows": [
+            [
+              "aa"
+            ],
+            [
+              "bz"
+            ]
+          ]
+        },
+        "meta.system": {
+          "columns": [
+            "SystemCode",
+            "SystemID"
+          ],
+          "rows": [
+            [
+              "SHIP",
+              7
+            ],
+            [
+              "FLEET",
+              8
+            ]
+          ]
+        }
+      },
+      "columns": [
+        "SourceDispatchNo",
+        "OriginDepotID",
+        "DestinationDepotID",
+        "ReferenceText",
+        "SourceSystemID",
+        "InstanceCode"
+      ],
+      "rows": [
+        [
+          "042",
+          201,
+          202,
+          null,
+          7,
+          "east"
+        ],
+        [
+          "042",
+          202,
+          201,
+          null,
+          7,
+          "west"
+        ],
+        [
+          "043",
+          null,
+          202,
+          null,
+          7,
+          "east"
+        ],
+        [
+          "044",
+          201,
+          null,
+          null,
+          7,
+          "west"
+        ]
+      ],
+      "replace": {
+        "'WID_GDSBatchID'": "15"
+      }
+    }
+  }
+}

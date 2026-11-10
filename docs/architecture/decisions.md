@@ -299,7 +299,7 @@ in the relationship basis when it replaces business endpoints with generated key
 Dimensional pair only needs the pair's System to feed it. Validation lists every
 System in scope and runs one once an Entity has its saved Mapping.
 Code/Validation source records carry active registered `source_system_bindings` for
-modeled lookup parents. These resolve a Mapping's explicit foreign-System namespace;
+modeled lookup parents. They identify the System code for a foreign parent lookup;
 they neither establish a join nor add target System assignments. Relevant bindings
 participate in the input digest.
 Input-currentness digests describe consistency, not production execution readiness.
@@ -366,14 +366,17 @@ content digest; it does not inspect Git contents. Web SQL generation/downloads r
 table-only and regeneration preserves Git artifacts. Source changes describe fresh
 installs, not an upgrade of an installed database.
 
-The SQL handoff uses schema.table references, unqualified temporary-view stages and
-one final explicit-column SELECT. The runtime sets the catalog and replaces the bare
-numeric token wid_GDSBatchID before execution; generated SQL declares no widgets or
-parameters. It owns audit/history population, surrogate generation and target loads.
-Mapping records the driver batch and same-load Bronze join restrictions separately
-from parent key/version predicates. Complex rowsets keep their supported CTEs,
-reductions, windows and aligned branches. Missing match or execution rules remain
-review findings; a source identifier never substitutes for a generated parent key.
+Mapping describes the joins and shared row operations once for each Entity/System.
+Attribute rules describe individual values. Code writes the final SELECT in target order.
+Resolve SystemID in the execution environment with a LEFT JOIN to meta.system on
+SystemCode alone. Use the parent's own code for an explicit foreign-System lookup.
+
+SQL uses schema.table references and unqualified temporary views. Compare a Bronze
+driver's registered batch column to the quoted token `'WID_GDSBatchID'`. Join batched
+Bronze inputs on their registered batch columns as well as their business keys.
+An input without a registered batch column has no batch condition. Silver/Gold parent
+lookups use the modeled keys and version rules, independent of the Bronze load.
+The runtime sets the catalog and owns surrogate generation, audit/history and loads.
 
 SQL/orchestration authoring rules belong in the Code Prompt. Frozen run facts are
 structured `artifact_requirements`; validators enforce layout, target/System

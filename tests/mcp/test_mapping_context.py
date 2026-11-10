@@ -295,9 +295,10 @@ def test_missing_attribute_rows_report_incomplete_coverage_without_inventing_rul
     assert result.next_cursor is None
 
 
-def test_mapping_population_and_source_system_value_survive_id_stripping():
+def test_code_receives_runtime_system_code_and_legacy_readers_preserve_their_contract():
     projected = project_mapping_inputs(context(), workflow="code_generation")
-    assert projected["source_systems"] == [
+    assert projected["source_systems"] == [{"system_code": "CRM"}]
+    assert project_mapping_inputs(context(), workflow=None)["source_systems"] == [
         {"system_code": "CRM", "source_system_value": 10}
     ]
     assert "source_tenant_id" not in projected["target_metadata"]

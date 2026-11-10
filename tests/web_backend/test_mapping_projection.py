@@ -1,4 +1,4 @@
-"""The optional standard Mapping shorthand materializes before draft handoff."""
+"""New mappings keep join instructions separate from values. Older prompts can use shorthand."""
 
 from typing import Any
 
@@ -31,6 +31,19 @@ def _answer(query: str, rules: dict[str, str]) -> dict[str, JsonValue]:
             for name, rule in rules.items()
         ],
     }
+
+
+async def test_join_instructions_and_field_rules_reach_draft_separately() -> None:
+    validator = CompleteMappingCandidateValidator(preparation=mapping_preparation())
+    joins = "FROM bronze.customer c LEFT JOIN meta.system sys ON sys.SystemCode = 'CRM'"
+    candidate = _answer(joins, {"CustomerID": "Use c.customer_number"})
+    assert not (await validator.validate(candidate)).issues
+    changes = validator.parse_validated(candidate).changes
+    documents = {change.dataset: change.records[0] for change in changes}
+    assert documents["mapping_object"]["mapping_transformation_document"] == {"sample_query": joins}
+    attribute = documents["mapping_attribute"]["attribute_mapping_transformation_document"]
+    assert isinstance(attribute, dict)
+    assert attribute["transformation_logic"] == "Use c.customer_number"
 
 
 @pytest.mark.parametrize("layer", ["logical_entity", "dimensional_entity"])
@@ -177,9 +190,8 @@ async def test_only_selected_layer_defaults_enable_projection(template: str) -> 
     prep = type(prep).model_validate(data, strict=False)
     validator = CompleteMappingCandidateValidator(preparation=prep)
     shorthand = "SELECT <mapped_columns> FROM bronze.customer"
-    assert ("<mapped_columns>" in str(validator.output_schema()["description"])) == (
-        template == "standard"
-    )
+    description = str(validator.output_schema()["description"])
+    assert ("In sample_query describe the driver" in description) == (template == "standard")
     result = validator.parse_validated(_answer(shorthand, {"CustomerID": "id"}))
     obj = result.normalized.object_mapping
     assert obj and obj.mapping_transformation_document

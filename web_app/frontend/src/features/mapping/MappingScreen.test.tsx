@@ -803,6 +803,7 @@ describe("Mapping journey", () => {
 });
 
 function mappingFetchStub(options: {
+  mappingLocked?: boolean;
   hasNextPage?: boolean;
   empty?: boolean;
   denied?: boolean;
@@ -849,6 +850,7 @@ function mappingFetchStub(options: {
         project_revision: options.projectRevision ?? 18,
         items: options.empty ? [] : [{
           ...mappingObject,
+          is_locked: options.mappingLocked ?? mappingObject.is_locked,
           ...(nextPage ? { mapping_object_id: 82, target: { ...mappingObject.target, entity_name: "contact" } } : {}),
         }],
         next_cursor: options.hasNextPage && !nextPage ? "objects-next" : null,
@@ -1098,6 +1100,24 @@ function jsonResponse(value: unknown, status = 200): Response {
   });
 }
 
+
+it.each(["tenant_admin", "architect"])("offers Mapping deletion preview only to administrators (%s)", async (role) => {
+  const { fetcher, commands } = withRecordReview(mappingFetchStub({ role, mappingLocked: false }));
+  render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
+    history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/projects/18"] }),
+  })} />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("checkbox", { name: "Select Mapping Objects 81" }));
+  expect(screen.getByRole("button", { name: "Deactivate selected" })).toBeEnabled();
+  if (role === "architect") {
+    expect(screen.queryByRole("button", { name: "Delete selected" })).not.toBeInTheDocument();
+    return;
+  }
+  await user.click(screen.getByRole("button", { name: "Delete selected" }));
+  await waitFor(() => expect(commands[0]).toEqual({
+    action: "delete", dataset: "mapping_object", record_ids: [81], expected_project_revision: 18,
+  }));
+});
 
 it.each([["Object mappings", "mapping_object", 81], ["Attribute mappings", "mapping_attribute", 91]] as const)("reviews selected %s through the governed endpoint", async (view, dataset, recordId) => {
   const { fetcher, commands } = withRecordReview(mappingFetchStub());

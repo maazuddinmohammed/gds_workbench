@@ -165,6 +165,14 @@ def reader_definitions(
                 "returns eligible source headers and coordinates with empty attribute lists. "
                 "An unfiltered {} returns full details across pages. Continue with cursor alone."
             )
+        if name == "get_mapping_fk_evidence":
+            description = (
+                "List the target's outgoing foreign-key roles with {}. Pass target_attribute_names "
+                "from those roles for the child's lineage, the parent match and returned keys, and "
+                "eligible source relationships relevant to this field. Links are evidence, not "
+                "instructions to join. Continue with the returned cursor alone."
+            )
+            default_behavior = "No selection lists the outgoing foreign-key roles."
         if name == "get_validation_basis":
             description = (
                 "Read the complete frozen System coverage index and saved ledger headers. Select "

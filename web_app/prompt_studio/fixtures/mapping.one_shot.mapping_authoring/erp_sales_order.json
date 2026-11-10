@@ -846,12 +846,12 @@
         },
         {
           "name": "sample_query",
-          "description": "Required field, nullable text. Pseudo-SQL illustrating supported source joins, predicates, filters and transformations. Null when unavailable; do not invent missing rules.",
+          "description": "Required field, nullable text. Describe the driving input, joins and shared steps. Put filters in filter_criteria and each output value in its Attribute rule.",
           "data_type": "string",
           "array_item_type": null,
           "is_required": true,
           "order": 3,
-          "example": "SELECT * FROM bronze_crm.customer WHERE is_active = true"
+          "example": "Start from bronze_crm.customer as c. Look up CRM in meta.system by SystemCode."
         }
       ]
     },
@@ -1572,7 +1572,7 @@
       }
     },
     "additionalProperties": false,
-    "description": "Return only the Mapping transformation content. Identity, lifecycle status, templates and provenance are derived by the backend. Partial output is valid: return supported Object and Attribute transformations and leave unsupported documents null or omit them. Missing selected transformations are cleared; locked and unselected mappings are preserved. Return no transformations when nothing is supported. Never invent rules to fill blanks. A System contributes only when it supplies a supported business rowset or business Attribute transformation. Generated surrogate keys, audit/history population, and 'omit from load select' notes alone are not a contribution. For such a pair return outcome no_applicable_source, object_mapping null and attribute_mappings []. For the standard templates a new sample_query may use SELECT <mapped_columns> FROM ... . Supply each projected Attribute's SQL expression in transformation_logic without its output alias and with default_record null. The backend supplies the ordered SELECT list. Use a full query for separate defaults or multi-branch logic.",
+    "description": "Return only the Mapping transformation content. Identity, lifecycle status, templates and provenance are derived by the backend. Partial output is valid: return supported Object and Attribute transformations and leave unsupported documents null or omit them. Missing selected transformations are cleared; locked and unselected mappings are preserved. Return no transformations when nothing is supported. Never invent rules to fill blanks. A System contributes only when it supplies a supported business rowset or business Attribute transformation. Generated surrogate keys, audit/history population, and 'omit from load select' notes alone are not a contribution. For such a pair return outcome no_applicable_source, object_mapping null and attribute_mappings []. In sample_query describe the driver, joins and shared steps. Put row filters in filter_criteria and each column's value in its own transformation_logic.",
     "properties": {
       "schema_version": {
         "const": "1.0",
@@ -1655,11 +1655,11 @@
           },
           {
             "name": "sample_query",
-            "description": "Required field, nullable text. Pseudo-SQL illustrating supported source joins, predicates, filters and transformations. Null when unavailable; do not invent missing rules.",
+            "description": "Required field, nullable text. Describe the driving input, joins and shared steps. Put filters in filter_criteria and each output value in its Attribute rule.",
             "data_type": "string",
             "array_item_type": null,
             "is_required": true,
-            "example": "SELECT * FROM bronze_crm.customer WHERE is_active = true"
+            "example": "Start from bronze_crm.customer as c. Look up CRM in meta.system by SystemCode."
           }
         ]
       },

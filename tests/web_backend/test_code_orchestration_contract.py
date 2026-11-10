@@ -21,7 +21,7 @@ SCENARIOS: dict[str, Any] = json.loads(
 )
 
 
-def _execute(
+def execute_fixture_sql(
     sql: str, sources: dict[str, Any]
 ) -> tuple[list[str], list[tuple[Any, ...]]]:
     statements = parse(sql, read="databricks", error_level=ErrorLevel.RAISE)
@@ -49,8 +49,11 @@ def _execute(
                     table.set("db", None)
             if isinstance(statement, exp.Create):
                 assert statement.kind == "VIEW"
-                # Each execution starts empty; SQLite lacks OR REPLACE VIEW.
+                # SQLite needs plain CREATE VIEW AS SELECT. The fixture starts empty
+                # and Databricks' optional outer parentheses do not change the query.
                 statement.set("replace", False)
+                if isinstance(statement.expression, exp.Subquery):
+                    statement.set("expression", statement.expression.unnest())
                 connection.execute(statement.sql(dialect="sqlite"))
         final = statements[-1]
         assert isinstance(final, exp.Query)
@@ -95,14 +98,18 @@ async def test_complex_mapping_and_generated_sql_preserve_expected_rows(scenario
     expected = case["expected"]
     assert [field["name"] for field in case["mapping"]["fields"]] == expected["columns"]
 
-    # The Mapping's readable SQL plan and its generated delivery artifact must
-    # independently produce the specified rows, including null parent roles.
-    for query in (case["mapping"]["sample_query"], sql):
-        assert "wid_GDSBatchID" in query
-        bound = query.replace("wid_GDSBatchID", str(case["batch_value"]))
-        bound = bound.replace(
-            f"<{case['source_system_code']} System ID>", str(case["source_system_value"])
-        )
-        columns, rows = _execute(bound, case["sources"])
-        assert columns == expected["columns"]
-        assert rows == sorted((tuple(row) for row in expected["rows"]), key=repr)
+    # Modern Object instructions describe the rowset and filters separately; the
+    # legacy sample contains a full projection. Only the Code artifact is executed.
+    obj = case["mapping"]
+    if scenario == "rollup":
+        assert obj["sample_query"].startswith("FROM ")
+        assert "SELECT " not in obj["sample_query"].upper()
+        assert "'WID_GDSBatchID'" in obj["filter_criteria"]
+    else:
+        assert obj["sample_query"].startswith("SELECT ")
+        assert "<SHIP System ID>" in obj["sample_query"]
+    assert "'WID_GDSBatchID'" in sql
+    bound = sql.replace("'WID_GDSBatchID'", str(case["batch_value"]))
+    columns, rows = execute_fixture_sql(bound, case["sources"])
+    assert columns == expected["columns"]
+    assert rows == sorted((tuple(row) for row in expected["rows"]), key=repr)

@@ -36,6 +36,7 @@ export function CodeGenerationScreen({
   project,
   hasTenantLock,
   hasAppPermission,
+  canDelete,
   layer,
 }: {
   layer: ProjectLayer;
@@ -44,6 +45,7 @@ export function CodeGenerationScreen({
   project: ProjectDetail;
   hasTenantLock: boolean;
   hasAppPermission: boolean;
+  canDelete: boolean;
 }) {
   const queryClient = useQueryClient();
   const [view, setView] = useState<"targets" | "artifacts">("targets");
@@ -176,6 +178,7 @@ export function CodeGenerationScreen({
       {view === "artifacts" ? <ProjectRecordHistory
         api={api} tenantId={tenantId} projectId={project.project_id} projectRevision={project.project_revision}
         dataset="generated_code" label="SQL files" showHeader={false} hasTenantLock={canGenerate}
+        actions={canDelete ? ["lock", "unlock", "deactivate", "reactivate", "delete"] : ["lock", "unlock", "deactivate", "reactivate"]}
         entityType={entityType}
       /> : <CodeGenerationLedger
         tenantId={tenantId}

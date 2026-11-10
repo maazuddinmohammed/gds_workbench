@@ -325,12 +325,38 @@ class CodeGenerationWorkflow:
                     max_page_records=200,
                     max_cumulative_result_bytes=result_budget,
                 )
+                batch_sources: list[tuple[str, str, str | None]] = []
+                for row in prompt_values["source_metadata"]:
+                    obj = row["object"]
+                    if "batch_attribute_name" not in obj and row.get("role") != "lookup":
+                        continue  # Older snapshots may lack registration.
+                    batch = obj.get("batch_attribute_name") if row.get("role") != "lookup" else None
+                    names = {batch}
+                    if batch:
+                        names.update(
+                            attr["fc_attribute_name"]
+                            for attr in obj.get("attributes", [])
+                            if attr["attribute_name"].casefold() == batch.casefold()
+                            and attr.get("fc_attribute_name")
+                        )
+                    coordinates = {(obj["object_schema"], obj["object_name"])}
+                    if obj.get("fc_object_schema") and obj.get("fc_object_name"):
+                        coordinates.add((obj["fc_object_schema"], obj["fc_object_name"]))
+                    batch_sources.extend(
+                        (schema, name, column) for schema, name in coordinates for column in names
+                    )
                 validator = CodeGenerationCandidateValidator(
                     targets=(
                         CodeGenerationTargetReference(
                             target_ref=target.target_ref,
                             modeled_entity_id=target.modeled_entity_id,
                             source_system_codes=target.source_system_codes,
+                            lookup_system_codes=tuple(
+                                binding["system_code"]
+                                for source in prompt_values["source_metadata"]
+                                for binding in source.get("source_system_bindings", [])
+                            ),
+                            batch_sources=tuple(batch_sources),
                             file_layout=plan.code_generation_file_layout,
                             preserved_artifact_names=target.preserved_artifact_names,
                         ),

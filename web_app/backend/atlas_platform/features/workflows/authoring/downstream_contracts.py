@@ -23,6 +23,20 @@ _LOOKUP_SYSTEM_BINDINGS_SCHEMA = {
     },
 }
 
+_CODE_LOOKUP_SYSTEMS_SCHEMA = {
+    "type": "array",
+    "description": "System codes available to identify this modeled lookup's namespace.",
+    "items": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "system_code": {"type": "string", "minLength": 1, "maxLength": 100},
+            "system_name": {"type": "string", "minLength": 1, "maxLength": 200},
+        },
+        "required": ["system_code", "system_name"],
+    },
+}
+
 CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
     "mapping": {
         "mapping_route": {
@@ -267,15 +281,15 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                     },
                     {
                         "name": "sample_query",
-                        "description": "Required field, nullable text. Pseudo-SQL illustrating "
-                        "supported source joins, predicates, filters and "
-                        "transformations. Null when unavailable; do not invent missing "
-                        "rules.",
+                        "description": "Required field, nullable text. Describe the driving input, "
+                        "joins and shared steps. Put filters in filter_criteria and each "
+                        "output value in its Attribute rule.",
                         "data_type": "string",
                         "array_item_type": None,
                         "is_required": True,
                         "order": 3,
-                        "example": "SELECT * FROM bronze_crm.customer WHERE is_active = true",
+                        "example": "Start from bronze_crm.customer as c. Look up CRM in "
+                        "meta.system by SystemCode.",
                     },
                 ],
             },
@@ -409,9 +423,12 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
         },
         "mapping_basis": {
             "description": "Ordered cards for one Mapping pair. The target and its fields carry "
-            "readiness actions, lineage and saved rules. Each eligible source declares its "
+            "readiness actions and lineage. Fields report has_saved_rule even when their saved "
+            "documents are deferred. Each eligible source declares its "
             "reference and column_fields for the following column values. Remaining evidence "
-            "cards carry relationships, upstream rules, Context and measured evidence.",
+            "cards carry relationships, upstream rules, Context and measured evidence. fk_role "
+            "indexes each outgoing target Attribute, its parent and returned key. fk_source_link "
+            "identifies eligible physical join operands relevant to that role.",
             "value_schema": {
                 "type": "array",
                 "items": {
@@ -424,6 +441,8 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                                 "field",
                                 "source",
                                 "column",
+                                "fk_role",
+                                "fk_source_link",
                                 *MAPPING_EVIDENCE_KINDS,
                             ]
                         },
@@ -759,7 +778,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             "is_locked": {"title": "Is Locked", "type": "boolean"},
                             "object": {"$ref": "#/$defs/SqlSourceObject"},
                             "source_system_code": {"type": "string", "minLength": 1},
-                            "source_system_bindings": _LOOKUP_SYSTEM_BINDINGS_SCHEMA,
+                            "source_system_bindings": _CODE_LOOKUP_SYSTEMS_SCHEMA,
                         },
                         "required": [
                             "role",
@@ -946,7 +965,6 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                                 "title": "System Name",
                                 "type": "string",
                             },
-                            "source_system_value": {"type": "integer", "minimum": 1},
                         },
                         "required": ["system_code", "system_name"],
                         "title": "SqlSourceSystem",

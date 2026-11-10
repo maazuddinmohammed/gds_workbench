@@ -37,6 +37,10 @@ class CodeGenerationTargetReference(BaseModel):
     modeled_entity_id: int = Field(gt=0, repr=False)
     source_system_codes: tuple[str, ...] = Field(min_length=1, max_length=200)
 
+    # Schema/table, registered batch column (null means unbatched). Scoped to this Run.
+    batch_sources: tuple[tuple[str, str, str | None], ...] = ()
+    lookup_system_codes: tuple[str, ...] | None = None
+
     file_layout: Literal["combined", "per_system"] | None = "combined"
     preserved_artifact_names: tuple[str, ...] = ()
 
@@ -194,6 +198,7 @@ class CodeGenerationCandidateValidator:
             if not _is_generation_sql(
                 artifact.generated_sql,
                 transformation=artifact.artifact_role == "target_transformation",
+                target=self._by_ref[artifact.target_ref],
             ):
                 return AgentCandidateValidation(
                     issues=(
@@ -205,8 +210,10 @@ class CodeGenerationCandidateValidator:
                             message=(
                                 "Use only read-only queries and unqualified temporary views. "
                                 "Transformations finish with one explicit-column SELECT. "
-                                "Use schema.table references and the literal wid_GDSBatchID "
-                                "token; catalog qualifiers and SQL parameter bindings "
+                                "Use schema.table and 'WID_GDSBatchID' only on registered "
+                                "batch columns. Get SystemID by LEFT JOIN meta.system on "
+                                "SystemCode alone. "
+                                "Catalog qualifiers and SQL parameter bindings "
                                 "are unsupported. "
                                 "No persistent DDL, DML, commands, SELECT * or comments."
                             ),
@@ -227,6 +234,7 @@ class CodeGenerationCandidateValidator:
             if not _is_generation_sql(
                 candidate_artifact.generated_sql,
                 transformation=candidate_artifact.artifact_role == "target_transformation",
+                target=target,
             ):
                 raise InvalidRequestError("The SQL does not follow the artifact delivery contract.")
             try:
@@ -403,7 +411,9 @@ def _is_valid_sql(value: Any) -> bool:
     )
 
 
-def _is_generation_sql(value: str, *, transformation: bool) -> bool:
+def _is_generation_sql(
+    value: str, *, transformation: bool, target: CodeGenerationTargetReference
+) -> bool:
     try:
         statements = parse(value, read="databricks", error_level=ErrorLevel.RAISE)
     except ParseError:
@@ -422,17 +432,24 @@ def _is_generation_sql(value: str, *, transformation: bool) -> bool:
             isinstance(item, exp.TemporaryProperty) for item in properties.expressions
         ):
             return False
-        target = statement.this
+        view_name = statement.this
         if (
-            not isinstance(target, exp.Table)
-            or target.db
-            or target.catalog
+            not isinstance(view_name, exp.Table)
+            or view_name.db
+            or view_name.catalog
             or not isinstance(statement.expression, Query)
         ):
             return False
     for statement in statements:
         assert statement is not None
         relations = tuple(statement.find_all(exp.Table))
+        if not _valid_runtime_references(
+            statement,
+            value,
+            target,
+            final_projection=transformation and statement is statements[-1],
+        ):
+            return False
         if any(relation.catalog for relation in relations):
             return False
         relation_keys = {
@@ -462,3 +479,132 @@ def _is_generation_sql(value: str, *, transformation: bool) -> bool:
         for select in statement.find_all(exp.Select)
         for column in select.expressions
     )
+
+
+def _valid_runtime_references(
+    statement: exp.Expr, sql: str, target: CodeGenerationTargetReference, *, final_projection: bool
+) -> bool:
+    """Check registry joins, literal provenance and explicitly bound batch predicates."""
+    for table in statement.find_all(exp.Table):
+        if (table.db.casefold(), table.name.casefold()) != ("meta", "system"):
+            continue
+        join = table.parent
+        if not isinstance(join, exp.Join) or join.side != "LEFT":
+            return False
+        match = join.args.get("on")
+        if isinstance(match, exp.Paren):
+            match = match.unnest()
+        if not isinstance(match, exp.EQ):
+            return False
+        column, code = match.this.unnest(), match.expression.unnest()
+        if isinstance(column, exp.Literal):
+            column, code = code, column
+        if (
+            not isinstance(column, exp.Column)
+            or column.table.casefold() != table.alias_or_name.casefold()
+            or column.name.casefold() != "systemcode"
+            or not isinstance(code, exp.Literal)
+            or not code.is_string
+            or (
+                target.lookup_system_codes is not None
+                and code.this not in (*target.source_system_codes, *target.lookup_system_codes)
+            )
+        ):
+            return False
+
+    # Reject direct numeric provenance, including quoted IDs and casts. Constants in
+    # unrelated business fields and comparisons between two provenance columns are valid.
+    def numeric_id(value: exp.Expr) -> bool:
+        while isinstance(value, (exp.Paren, exp.Cast, exp.Neg)):
+            value = value.this
+        if isinstance(value, exp.Coalesce):
+            return any(numeric_id(option) for option in (value.this, *value.expressions))
+        return isinstance(value, exp.Literal) and (
+            not value.is_string or re.fullmatch(r"[+-]?[0-9]+", value.this.strip()) is not None
+        )
+
+    for select in statement.find_all(exp.Select):
+        base_tables = {
+            table.alias_or_name.casefold(): table
+            for table in select.find_all(exp.Table)
+            if table.db and table.find_ancestor(exp.Select) is select
+        }
+        for output in select.selects:
+            if output.alias_or_name.casefold() != "sourcesystemid":
+                continue
+            value = output.this if isinstance(output, exp.Alias) else output
+            if numeric_id(value):
+                return False
+            # Within helper views/CTEs a parent's existing provenance may be
+            # carried into a later match. Only a direct final assignment is definitive.
+            if not final_projection or select.find_ancestor(exp.CTE, exp.Subquery):
+                continue
+            while isinstance(value, (exp.Cast, exp.Paren)):
+                value = value.this
+            if (
+                isinstance(value, exp.Column)
+                and (source := base_tables.get(value.table.casefold()))
+                and (source.db.casefold(), source.name.casefold(), value.name.casefold())
+                != ("meta", "system", "systemid")
+            ):
+                return False
+    for predicate in statement.find_all(exp.Predicate):
+        if isinstance(predicate, exp.Binary):
+            pairs = ((predicate.this, predicate.expression), (predicate.expression, predicate.this))
+        elif isinstance(predicate, exp.In):
+            pairs = tuple((predicate.this, value) for value in predicate.expressions)
+        else:
+            continue
+        for operand, value in pairs:
+            while isinstance(operand, (exp.Cast, exp.Paren)):
+                operand = operand.this
+            if (
+                isinstance(operand, exp.Column)
+                and operand.name.casefold() == "sourcesystemid"
+                and numeric_id(value)
+            ):
+                return False
+
+    if any(col.name.casefold() == "wid_gdsbatchid" for col in statement.find_all(exp.Column)):
+        return False
+    registered: dict[tuple[str, str], set[str | None]] = {}
+    for schema, table, column in target.batch_sources:
+        registered.setdefault((schema.casefold(), table.casefold()), set()).add(
+            column.casefold() if column else None
+        )
+    for token in statement.find_all(exp.Literal):
+        if not token.is_string or token.this.casefold() != "wid_gdsbatchid":
+            continue
+        if sql[token.meta["start"] : token.meta["end"] + 1] != "'WID_GDSBatchID'":
+            return False
+        parameter: exp.Expr = token
+        while isinstance(parameter.parent, (exp.Cast, exp.Paren)):
+            parameter = parameter.parent
+        comparison = parameter.parent
+        if not isinstance(comparison, exp.EQ):
+            return False
+        batch_column = (
+            comparison.this if parameter is comparison.expression else comparison.expression
+        )
+        while isinstance(batch_column, (exp.Cast, exp.Paren)):
+            batch_column = batch_column.this
+        if not isinstance(batch_column, exp.Column):
+            return False
+        # Check a directly named physical input against its own registration. A
+        # derived relation may project/rename the original batch column.
+        scope = comparison.find_ancestor(exp.Select)
+        if registered and scope is not None:
+            inputs = [
+                table
+                for table in scope.find_all(exp.Table)
+                if table.find_ancestor(exp.Select) is scope
+                and (
+                    not batch_column.table
+                    or table.alias_or_name.casefold() == batch_column.table.casefold()
+                )
+            ]
+            if len(inputs) == 1 and inputs[0].db:
+                key = (inputs[0].db.casefold(), inputs[0].name.casefold())
+                if key in registered and batch_column.name.casefold() not in registered[key]:
+                    return False
+    return True

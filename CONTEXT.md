@@ -148,15 +148,16 @@ Mapping may produce reviewed SQL with typed-null or zero-row placeholders and
 warnings. A current input digest does not prove runnable business logic.
 Generated surrogate keys are database-owned; separately named source identifiers
 remain Mapping-owned. The external orchestration layer owns loads and merges. It selects the catalog and
-replaces the literal numeric token `wid_GDSBatchID`. Generated SQL uses schema.table,
+receives the quoted batch token `'WID_GDSBatchID'` in generated SQL. Generated SQL uses schema.table,
 unqualified temporary views and a final explicit-column SELECT. A batched driver
-uses the requested batch; joined Bronze inputs from the same load align on batch as
+uses the requested batch. Inputs without registered batch columns have no batch filter.
+Joined batched Bronze inputs align on batch as
 well as business identity. Silver/Gold parent lookups may resolve earlier-loaded
 records. Relationships supply lookup operands and returned keys; a child source
 identifier is never copied into a generated-key foreign key. Explicit modeled parents
 are eligible before their own Mapping exists; their key lineage remains necessary.
-Cross-System parent lookups carry registered numeric System bindings without adding
-target branches. Dependency order puts parents before children, preserving higher
+Generated SQL looks up SystemID in `meta.system` by SystemCode alone. A
+cross-System parent uses its own System code without adding a target branch. Dependency order puts parents before children, preserving higher
 deliberate orders and locks. Regenerate all affected parent and child Mappings after
 model changes. Self-references/cycles require an explicit loading strategy.
 

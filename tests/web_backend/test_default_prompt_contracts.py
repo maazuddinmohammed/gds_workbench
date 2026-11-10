@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, cast
@@ -39,6 +40,24 @@ DEFAULTS = json.loads(
 )
 
 
+@pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
+def test_mapping_example_json_preserves_the_displayed_join_plan(mode: str) -> None:
+    prompt = next(
+        row["system_prompt"]
+        for row in DEFAULTS
+        if row["project_workflow"] == "mapping" and row["workflow_execution_mode"] == mode
+    )
+    shown = re.search(r"^```sql\n(.*?)\n```$", prompt, re.M | re.S)
+    example = re.search(r"^```json\n(.*?)\n```$", prompt, re.M | re.S)
+    assert shown and example
+    document = json.loads(example[1])["object_mapping"]["mapping_transformation_document"]
+    plan = document["sample_query"]
+    assert plan == shown[1]
+    assert [line.strip().split()[0] for line in plan.splitlines()] == [
+        "FROM", "LEFT", "ON", "LEFT", "ON", "AND"
+    ]
+
+
 @pytest.mark.parametrize(
     "default",
     DEFAULTS,
@@ -65,7 +84,7 @@ def test_seeded_defaults_render_registered_inputs_and_select_supported_tools(
         assert not tool_names
     elif workflow == "mapping":
         registered = {tool.name for tool in registered_tool_definitions(workflow)}
-        assert tool_names == ["get_mapping_basis"]
+        assert set(tool_names) == {"get_mapping_basis", "get_mapping_fk_evidence"}
         assert {
             "get_mapping_basis", "get_mapping_support", "get_mapping_support_records",
             "get_mapping_target", "get_mapping_sources",

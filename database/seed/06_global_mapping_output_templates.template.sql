@@ -62,12 +62,12 @@ BEGIN
       },
       {
         "output_template_field_name": "sample_query",
-        "output_template_field_description": "Required field, nullable text. Pseudo-SQL illustrating supported source joins, predicates, filters and transformations. Null when unavailable; do not invent missing rules.",
+        "output_template_field_description": "Required field, nullable text. Describe the driving input, joins and shared steps. Put filters in filter_criteria and each output value in its Attribute rule.",
         "output_template_field_data_type": "string",
         "output_template_field_array_item_type": null,
         "output_template_field_is_required": true,
         "output_template_field_order": 3,
-        "output_template_field_example": "SELECT * FROM bronze_crm.customer WHERE is_active = true"
+        "output_template_field_example": "Start from bronze_crm.customer as c. Look up CRM in meta.system by SystemCode."
       }
     ]
   },
@@ -149,12 +149,12 @@ BEGIN
       },
       {
         "output_template_field_name": "sample_query",
-        "output_template_field_description": "Required field, nullable text. Pseudo-SQL illustrating supported source joins, predicates, filters and transformations. Null when unavailable; do not invent missing rules.",
+        "output_template_field_description": "Required field, nullable text. Describe the driving input, joins and shared steps. Put filters in filter_criteria and each output value in its Attribute rule.",
         "output_template_field_data_type": "string",
         "output_template_field_array_item_type": null,
         "output_template_field_is_required": true,
         "output_template_field_order": 3,
-        "output_template_field_example": "SELECT * FROM silver.Customer WHERE is_active = true"
+        "output_template_field_example": "Start from silver.Customer, one row per customer."
       }
     ]
   },

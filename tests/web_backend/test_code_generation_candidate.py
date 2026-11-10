@@ -550,7 +550,7 @@ async def test_generation_rejects_catalog_sources_in_every_query_scope(
         "SELECT CustomerID FROM customers",
         "CREATE OR REPLACE TEMPORARY VIEW orders AS "
         "SELECT o.OrderID FROM bronze.orders AS o "
-        "WHERE o.GDSBatchID = wid_GDSBatchID; SELECT OrderID FROM orders",
+        "WHERE o.GDSBatchID = 'WID_GDSBatchID'; SELECT OrderID FROM orders",
         "SELECT o.payload.customer.name AS CustomerName FROM bronze.orders AS o",
         "SELECT payload.customer.name.first AS FirstName FROM bronze.orders",
     ),
@@ -622,7 +622,7 @@ async def test_generation_preserves_parameter_like_strings_and_quoted_columns() 
                 _artifact(
                     "target_1",
                     "SELECT ':batch_id ${label}' AS Description, o.`$value` AS Amount "
-                    "FROM bronze.orders AS o WHERE o.GDSBatchID = wid_GDSBatchID",
+                    "FROM bronze.orders AS o WHERE o.GDSBatchID = 'WID_GDSBatchID'",
                     systems=["CRM", "ERP"],
                 ),
                 _artifact("target_2", "SELECT 2 AS id", systems=["MDM"]),
@@ -630,3 +630,61 @@ async def test_generation_preserves_parameter_like_strings_and_quoted_columns() 
         },
     )
     assert not (await _validator().validate(candidate)).issues
+
+
+@pytest.mark.parametrize(
+    ("sql", "valid"),
+    [
+        ("SELECT CAST(11 AS BIGINT) AS SourceSystemID FROM bronze.orders", False),
+        ("SELECT id FROM silver.parent WHERE SourceSystemID = '11'", False),
+        ("SELECT id FROM silver.parent WHERE CAST(11 AS BIGINT) = SourceSystemID", False),
+        ("SELECT id FROM silver.parent WHERE SourceSystemID IN (11, 12)", False),
+        (
+            "SELECT (SELECT SystemID"
+            " FROM meta.system WHERE SystemCode = 'CRM') AS SourceSystemID",
+            False,
+        ),
+        (
+            "SELECT sys.SystemID"
+            " FROM bronze.orders LEFT JOIN meta.system AS sys ON sys.SystemID = 11",
+            False,
+        ),
+        (
+            "SELECT sys.SystemID"
+            " FROM bronze.orders LEFT JOIN meta.system AS sys ON sys.SystemCode = 'UNKNOWN'",
+            False,
+        ),
+        ("SELECT id FROM bronze.orders o WHERE o.load_batch = wid_GDSBatchID", False),
+        ('SELECT id FROM bronze.orders o WHERE o.load_batch = "WID_GDSBatchID"', False),
+        ("SELECT id FROM bronze.orders o WHERE o.load_batch = 'wid_GDSBatchID'", False),
+        ("SELECT id FROM bronze.orders o WHERE o.id = 'WID_GDSBatchID'", False),
+        ("SELECT id FROM silver.parent p WHERE p.GDSBatchID = 'WID_GDSBatchID'", False),
+        ("SELECT o.id FROM bronze.orders o LEFT JOIN silver.parent p ON p.id = o.id "
+         "WHERE o.load_batch = 'WID_GDSBatchID'", True),
+        ("SELECT sys.SystemID AS SourceSystemID FROM bronze.orders "
+         "LEFT JOIN meta.system sys ON sys.SystemCode='CRM' "
+         "LEFT JOIN meta.system p ON p.SystemCode='DIRECTORY' "
+         "LEFT JOIN silver.parent d ON d.SourceSystemID=p.SystemID AND d.id=11", True),
+        ("SELECT s.SystemID AS SourceSystemID FROM bronze.orders o "
+         "LEFT JOIN meta.system s ON (s.SystemCode = 'CRM')", True),
+        ("SELECT COALESCE(s.SystemID, 11) AS SourceSystemID FROM bronze.orders o "
+         "LEFT JOIN meta.system s ON s.SystemCode = 'CRM'", False),
+        ("SELECT o.id FROM bronze.orders o WHERE o.load_batch = 'WID_GDSBatchID' - 1", False),
+        ("WITH parents AS (SELECT p.id, p.SourceSystemID FROM silver.parent p) "
+         "SELECT o.id FROM bronze.orders o JOIN parents p ON o.id = p.id", True),
+        ("SELECT o.SourceSystemID AS SourceSystemID FROM silver.orders o", False),
+        ("SELECT o.id FROM external.orders o WHERE o.external_batch='WID_GDSBatchID'", True),
+        ("SELECT o.id FROM registered_fc.orders o WHERE o.AUDIT_BATCH='WID_GDSBatchID'", True),
+    ],
+)
+async def test_runtime_id_and_registered_batch_conventions(sql: str, valid: bool) -> None:
+    validator = CodeGenerationCandidateValidator(
+        targets=(CodeGenerationTargetReference(
+            target_ref="target_1", modeled_entity_id=1, source_system_codes=("CRM",),
+            lookup_system_codes=("DIRECTORY",),
+            batch_sources=(("bronze", "orders", "load_batch"), ("silver", "parent", None),
+                           ("registered_fc", "orders", "AUDIT_BATCH")),
+        ),)
+    )
+    candidate = cast(JsonValue, {"artifacts": [_artifact("target_1", sql, systems=["CRM"])]})
+    assert (not (await validator.validate(candidate)).issues) == valid

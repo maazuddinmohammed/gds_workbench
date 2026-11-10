@@ -221,15 +221,15 @@ async def test_relationship_parent_is_available_without_same_system_mapping(
         assert columns["SourceCustomerID"]["is_natural_key"]
         assert columns["SourceSystemID"]["is_meta_data"]
         bindings = lookup_source["source_system_bindings"]
-        expected_ids = {scope.source_system_id}
+        target_system = row["source_context"]["source_systems"][0]["system_code"]
+        expected_codes = {target_system}
         if parent_mapping == "other_system":
-            expected_ids.add(reference_system_id)
-        assert {item["source_system_value"] for item in bindings} == expected_ids
+            expected_codes.add(f"REFERENCE_{project_id}")
+        assert {item["system_code"] for item in bindings} == expected_codes
+        assert all("source_system_value" not in item for item in bindings)
         assert row["source_system_count"] == len(projected["source_systems"]) == 1
-        assert (
-            projected["source_systems"][0]["source_system_value"]
-            == scope.source_system_id
-        )
+        assert projected["source_systems"][0]["system_code"] == target_system
+        assert "source_system_value" not in projected["source_systems"][0]
         validator = cast(
             Any,
             Draft202012Validator(
@@ -337,8 +337,8 @@ async def test_relationship_parent_is_available_without_same_system_mapping(
             if item["role"] == "lookup"
         )
         assert {
-            binding["source_system_value"]
+            binding["system_code"]
             for binding in retired_parent["source_system_bindings"]
-        } == {scope.source_system_id}
+        } == {target_system}
     finally:
         await runtime.close()

@@ -205,6 +205,28 @@ def test_parent_lookup_keeps_key_lineage_and_its_own_system_rules(
         cards = execution.tool_catalog.invoke("get_mapping_basis", {})["items"]
     else:
         cards = cast(dict[str, Any], execution.embedded_context)["values"]["mapping_basis"]
+    if mode == "tool_assisted":
+        assert isinstance(execution.tool_catalog, DownstreamContextReaders)
+        roles = execution.tool_catalog.invoke("get_mapping_fk_evidence", {})["items"]
+        assert [c["record"]["target_attribute_name"] for c in roles] == ["CustomerID"]
+        fk = execution.tool_catalog.invoke(
+            "get_mapping_fk_evidence", {"target_attribute_names": ["CustomerID"]}
+        )["items"]
+    else:
+        fk = [c for c in cards if c["kind"].startswith("fk_")]
+    role = next(c["record"] for c in fk if c["kind"] == "fk_role")
+    assert role["returned_attribute"] == "CustomerKey"
+    assert set(role["parent_key_names"]) == {"SourceCustomerID", "CustomerKey"}
+    if mode == "tool_assisted":
+        assert any(
+            c["kind"] == f"source_{layer}_attribute"
+            and c["record"]["sources"] == business_key["sources"]
+            for c in fk
+        )
+        assert [
+            c["record"]["source_system_code"]
+            for c in fk if c["kind"] == "source_attribute_mapping"
+        ] == ["ERP"]
     key = next(
         card["record"]
         for card in cards
@@ -236,10 +258,14 @@ def test_parent_lookup_keeps_key_lineage_and_its_own_system_rules(
     assert set(parent_card["deferred_mapping_systems"]) == {f"OTHER_{index}" for index in range(60)}
     if mode == "tool_assisted":
         assert isinstance(execution.tool_catalog, DownstreamContextReaders)
-        page = execution.tool_catalog.invoke("get_mapping_basis", {"candidate_refs": [parent_card["ref"]]})
+        page = execution.tool_catalog.invoke(
+            "get_mapping_basis", {"candidate_refs": [parent_card["ref"]]}
+        )
         details = list(page["items"])
         while page["next_cursor"]:
-            page = execution.tool_catalog.invoke("get_mapping_basis", {"cursor": page["next_cursor"]})
+            page = execution.tool_catalog.invoke(
+                "get_mapping_basis", {"cursor": page["next_cursor"]}
+            )
             details.extend(page["items"])
         assert any("Wide foreign-System rule" in json.dumps(card) for card in details)
         assert len([card for card in details if card["kind"] == "source_attribute_mapping"]) == 61

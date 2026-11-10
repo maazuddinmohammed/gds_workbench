@@ -46,9 +46,9 @@ This is the data you work with. The examples only explain the terms; they are no
   assigns these keys to every authored Group/Check; do not return them yourself. Each
   `mapping_evidence` target holds every System's branches; yours have
   `source_system_code` equal to `system_scope.system_code`.
-- `source_systems[*].source_system_value` is the `SourceSystemID` value loaded rows
-  carry for that System. Scope System-specific Checks with
-  `SourceSystemID = <that value>`; never filter on the System code text. Test
+- Scope System-specific Checks with `LEFT JOIN meta.system AS sys ON sys.SystemCode = 'ERP'`
+  and compare the checked row's SourceSystemID to sys.SystemID.
+  Use the selected System's actual code. An Atlas numeric ID is not a runtime ID. Test
   target-wide invariants, such as generated-key uniqueness, on the whole target and
   say so in the description; without a System column, author only rules that hold for
   every target row.

@@ -139,8 +139,10 @@ def _validate_review_selection(
         "dimensional_entity",
         "dimensional_attribute",
         "dimensional_relationship",
+        "mapping_object",
+        "generated_code",
     }:
-        raise ValueError("Permanent deletion is available only for modeled records.")
+        raise ValueError("This record type does not support direct permanent deletion.")
     if layer is None:
         if not record_ids:
             raise ValueError("Select at least one record.")

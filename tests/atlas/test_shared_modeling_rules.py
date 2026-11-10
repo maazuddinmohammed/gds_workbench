@@ -38,8 +38,9 @@ def _web_prompts(seed: Path, payload_tag: str) -> dict[str, str]:
 
 WEB = _web_prompts(SEED, "$workflow_defaults$")
 
-# Every default prompt carries the shared "Data landscape" section.
-ZONE_WORKFLOWS = tuple(WEB)
+# Modeling stages introduce the landscape. The downstream Mapping and Code stages
+# receive a scoped target and use the runtime rules below.
+ZONE_WORKFLOWS = tuple(key for key in WEB if key not in {"mapping", "code_generation"})
 # (rule, web workflows, web pattern, Atlas file, Atlas pattern)
 SHARED_RULES = [
     (
@@ -93,7 +94,7 @@ SHARED_RULES = [
     ),
     (
         "null is unknown, not false or zero",
-        ("analysis", "mapping", "metadata_enrichment_object"),
+        ("analysis", "metadata_enrichment_object"),
         r"`null` means (?:unspecified or )?unavailable; `false` and `0`",
         "references/project/enrichment.md",
         r"`null` means unknown, not false",
@@ -107,9 +108,23 @@ SHARED_RULES = [
         r"modeling evidence",
     ),
     (
+        "resolve runtime System IDs by stable code",
+        ("mapping", "code_generation"),
+        r"meta\.system.*SystemCode.*SystemID",
+        "references/project/mapping-documents.md",
+        r"meta\.system.*SystemCode.*SystemID",
+    ),
+    (
+        "registered batch filter uses the quoted runtime token",
+        ("mapping", "code_generation"),
+        r"'WID_GDSBatchID'",
+        "references/code-generation/sql.md",
+        r"'WID_GDSBatchID'",
+    ),
+    (
         "no invented row choice",
         ("mapping",),
-        r"Do not invent latest-wins, DISTINCT",
+        r"Do not invent [^.]*latest-wins[^.]*deduplication",
         "references/project/mapping-documents.md",
         r"Do not assume latest-wins or add DISTINCT",
     ),

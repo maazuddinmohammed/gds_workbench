@@ -43,10 +43,8 @@ def compile_mapping_output_schema(
         )
     if supports_projection_shorthand(preparation):
         description += (
-            " For the standard templates a new sample_query may use SELECT <mapped_columns> "
-            "FROM ... . Supply each projected Attribute's SQL expression in transformation_logic "
-            "without its output alias and with default_record null. The backend supplies the "
-            "ordered SELECT list. Use a full query for separate defaults or multi-branch logic."
+            " In sample_query describe the driver, joins and shared steps. Put row filters "
+            "in filter_criteria and each column's value in its own transformation_logic."
         )
     schema["description"] = description
     if guidance:

@@ -29,7 +29,7 @@ Mapping carries Object dependency order; no order property belongs on a Code rec
 
 ## Runtime parameters and optional preflight
 
-The standard runtime replaces the literal numeric token `wid_GDSBatchID` before SQL execution. Preserve it bare in Mapping's batch predicates, without widget declarations, `:batch_id` or `${...}` syntax. The runtime sets the catalog; never qualify a relation with a catalog or emit USE CATALOG. Keep the driving batch restriction and same-load Bronze batch equality in their mapped positions. Parent Silver/Gold lookups can resolve older-loaded rows; their key/version rules remain independent. Never substitute profiling selections or invent latest-per-key, filters on unbatched inputs, or new business rules.
+For a batched Bronze driver use its registered column with the quoted token `'WID_GDSBatchID'`. Match registered batch columns in joined Bronze inputs alongside their business keys. Omit batch predicates on inputs without a registered column. Silver/Gold lookups use their modeled keys and version rules. Resolve each required System ID with a LEFT JOIN to `meta.system` on `SystemCode` alone, including any explicitly different parent System. Use schema.table names in the runtime-selected catalog.
 
 Static review is the default. If a permitted execution probe is useful, follow [query scope](../query-scope.md): authorized Connection/environment, actual evidence coordinates, masking, approved row/batch scope, bounds and exact evidence recording. Keep concrete test substitutions and diagnostic queries separate from the production artifact; describe any scope difference. SQL Never permits generation and static review, not execution.
 
@@ -41,20 +41,20 @@ Fictional Mapping: posted Order Lines, grain `(OrderID, LineNumber)`. Posted hea
 
 ```sql
 CREATE OR REPLACE TEMPORARY VIEW temp_order_line_erp_posted AS
-SELECT h.order_code, h.source_system_id
+SELECT h.order_code
 FROM `bronze`.`order_headers` AS h
 WHERE h.status = 'posted';
 
 CREATE OR REPLACE TEMPORARY VIEW temp_order_line_erp_joined AS
 SELECT o.OrderID, l.line_number, l.quantity, l.unit_price,
-       h.source_system_id AS SourceSystemID
+       sys.SystemID AS SourceSystemID
 FROM `bronze`.`order_lines` AS l
 INNER JOIN temp_order_line_erp_posted AS h
   ON l.order_code = h.order_code
- AND l.source_system_id = h.source_system_id
+LEFT JOIN meta.system AS sys ON sys.SystemCode = 'ERP'
 INNER JOIN `silver`.`Order` AS o
   ON o.OrderCode = h.order_code
- AND o.SourceSystemID = h.source_system_id;
+ AND o.SourceSystemID = sys.SystemID;
 
 CREATE OR REPLACE TEMPORARY VIEW temp_order_line_erp_projected AS
 SELECT j.OrderID,

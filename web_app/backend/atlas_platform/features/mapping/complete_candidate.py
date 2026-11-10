@@ -45,7 +45,7 @@ def _materialize_sample_query(
     candidate: CompleteMappingCandidateV1,
     framework_names: set[str],
 ) -> CompleteMappingCandidateV1:
-    """Expand the standard authoring shorthand before validating or saving the document."""
+    """Support older frozen prompts that requested a SELECT projection marker."""
     obj = candidate.object_mapping
     if obj is None or obj.mapping_transformation_document is None:
         return candidate

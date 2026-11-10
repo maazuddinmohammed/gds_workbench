@@ -1,4 +1,4 @@
-"""Maintained synthetic SQL examples must obey the real Code delivery contract."""
+"""Synthetic examples exercise Code delivery and runtime lookup semantics."""
 
 from __future__ import annotations
 
@@ -25,30 +25,17 @@ from pydantic import JsonValue
 from sqlglot import exp, parse
 from sqlglot.errors import ErrorLevel, ParseError
 
+from tests.web_backend.test_code_orchestration_contract import execute_fixture_sql
+
 ROOT = Path(__file__).resolve().parents[2]
-CODE_DEFAULT = next(
-    row
-    for row in json.loads(
-        (ROOT / "database/seed/05_global_prompt_defaults.template.sql")
-        .read_text()
-        .split("$workflow_defaults$")[1]
-    )
-    if row["project_workflow"] == "code_generation"
+SQL_EXAMPLES = list(
+    json.loads((Path(__file__).parent / "fixtures/code_sql_examples.json").read_text()).values()
 )
-SQL_EXAMPLES = re.findall(
-    r"```sql\s*(.*?)```", CODE_DEFAULT["system_prompt"], re.DOTALL
-)
-
-
-def test_code_default_contains_all_delivery_examples() -> None:
-    assert len(SQL_EXAMPLES) == 4
 
 
 @pytest.mark.asyncio
 async def test_review_example_delivers_complete_inputs_and_valid_sql() -> None:
-    example = json.loads(
-        (Path(__file__).parent / "fixtures/code_review_example.json").read_text()
-    )
+    example = json.loads((Path(__file__).parent / "fixtures/code_review_example.json").read_text())
     contracts = downstream_input_contracts("code_generation")
     assert set(example["inputs"]) == set(contracts)
     for name, value in example["inputs"].items():
@@ -125,9 +112,7 @@ async def test_sql_examples_parse_and_pass_real_artifact_validation(
     try:
         statements = parse(sql, read="databricks", error_level=ErrorLevel.RAISE)
     except ParseError:
-        pytest.fail(
-            "Maintained SQL example does not parse as Databricks SQL", pytrace=False
-        )
+        pytest.fail("Maintained SQL example does not parse as Databricks SQL", pytrace=False)
     assert len(statements) == statement_count
     validator = CodeGenerationCandidateValidator(
         targets=(
@@ -179,30 +164,27 @@ async def test_sql_examples_parse_and_pass_real_artifact_validation(
             assert not statement.this.db and not statement.this.catalog
             assert statement.this.name not in declared
             declared.add(statement.this.name)
-    assert observed_sources == source_tables
+    metadata_sources: set[tuple[str, str]] = {("meta", "system")} if example_index != 3 else set()
+    assert observed_sources == source_tables | metadata_sources
     final = statements[-1]
     assert final is not None
     for select in final.find_all(exp.Select):
         assert tuple(select.named_selects) == target_columns
     if example_index == 1:
         joins = [
-            join
-            for statement in statements
-            if statement
-            for join in statement.find_all(exp.Join)
+            join for statement in statements if statement for join in statement.find_all(exp.Join)
         ]
-        assert len(joins) == 3
-        adjustment = joins[0]
+        assert len(joins) == 5
+        adjustment = joins[2]
         assert adjustment.side == "LEFT" and adjustment.this.alias == "adj"
         assert {
-            (column.table, column.name)
-            for column in adjustment.args["on"].find_all(exp.Column)
+            (column.table, column.name) for column in adjustment.args["on"].find_all(exp.Column)
         } == {
             (alias, name)
             for alias in ("adj", "l")
             for name in ("order_line_id", "instance_code", "GDSBatchID")
         }
-        for join, role in zip(joins[1:], ("bill", "ship"), strict=True):
+        for join, role in zip(joins[3:], ("bill", "ship"), strict=True):
             assert join.side == "LEFT"
             assert join.this.alias == role
             predicate = join.args["on"]
@@ -210,10 +192,11 @@ async def test_sql_examples_parse_and_pass_real_artifact_validation(
                 (role, "SourceCustomerNumber"),
                 ("l", f"{role}_to_number"),
                 (role, "SourceSystemID"),
+                ("sys" if role == "bill" else "ship_sys", "SystemID"),
                 (role, "InstanceCode"),
                 ("l", "instance_code"),
             }
-            assert {literal.this for literal in predicate.find_all(exp.Literal)} == {"22"}
+            assert {literal.this for literal in predicate.find_all(exp.Literal)} == set()
             assert (predicate.find(exp.Trim) is not None) == (role == "bill")
         stage = statements[0]
         assert isinstance(stage, exp.Create) and isinstance(stage.expression, exp.Select)
@@ -232,7 +215,6 @@ async def test_sql_examples_parse_and_pass_real_artifact_validation(
         assert {(col.table, col.name) for col in where.find_all(exp.Column)} == {
             ("l", "status"),
             ("l", "GDSBatchID"),
-            ("", "wid_GDSBatchID"),
         }
     elif example_index == 3:
         stage = statements[0]
@@ -249,9 +231,9 @@ def test_role_lookup_example_executes_with_batch_and_complete_parent_key() -> No
     # Exercise the maintained prompt example through the supplied runner's exact
     # substitution contract. All data and SQLite schemas live only in memory.
     sql = SQL_EXAMPLES[1]
-    assert "wid_GDSBatchID" in sql
+    assert "'WID_GDSBatchID'" in sql
     statements = parse(
-        sql.replace("wid_GDSBatchID", "42"),
+        sql.replace("WID_GDSBatchID", "42"),
         read="databricks",
         error_level=ErrorLevel.RAISE,
     )
@@ -260,6 +242,9 @@ def test_role_lookup_example_executes_with_batch_and_complete_parent_key() -> No
             """
             ATTACH DATABASE ':memory:' AS bronze_erp;
             ATTACH DATABASE ':memory:' AS silver;
+            ATTACH DATABASE ':memory:' AS meta;
+            CREATE TABLE meta.system (SystemCode TEXT PRIMARY KEY, SystemID INTEGER);
+            INSERT INTO meta.system VALUES ('ERP', 22), ('DIRECTORY', 52);
             CREATE TABLE bronze_erp.order_line (
                 order_line_id INTEGER, instance_code TEXT, bill_to_number TEXT,
                 ship_to_number TEXT, quantity NUMERIC, unit_price NUMERIC,
@@ -298,11 +283,11 @@ def test_role_lookup_example_executes_with_batch_and_complete_parent_key() -> No
             "INSERT INTO silver.Customer VALUES (?, ?, ?, ?, ?)",
             (
                 (101, "C1", "EAST", 22, 7),
-                (102, "C2", "EAST", 22, 12),
+                (102, "C2", "EAST", 52, 12),
                 (301, "C1", "WEST", 22, 5),
-                (302, "C2", "WEST", 22, 6),
+                (302, "C2", "WEST", 52, 6),
                 (901, "C1", "EAST", 11, 42),
-                (902, "C2", "EAST", 11, 42),
+                (902, "C2", "EAST", 22, 42),
             ),
         )
         for statement in statements[:-1]:
@@ -329,77 +314,6 @@ def test_role_lookup_example_executes_with_batch_and_complete_parent_key() -> No
         ]
 
 
-def test_context_example_matches_direct_sql_and_preserves_source_identity() -> None:
-    contexts = re.findall(
-        r"```json\s*(.*?)```", CODE_DEFAULT["system_prompt"], re.DOTALL
-    )
-    assert len(contexts) == 1
-    context: dict[str, Any] = json.loads(contexts[0])
-    object_mapping = context["object_transformations"][0]
-    attribute_mappings = context["attribute_transformations"]
-    assert object_mapping["source_system_code"] == "CRM"
-    entity = object_mapping["entity"]
-    assert (entity["entity_schema_name"], entity["entity_name"]) == (
-        "silver",
-        "Customer",
-    )
-    source = object_mapping["transformation"]["source_tables"][0]
-    source_fields = (
-        "tenant_code",
-        "system_code",
-        "connection_code",
-        "object_schema",
-        "object_name",
-    )
-    assert tuple(source[field] for field in source_fields) == (
-        "EXAMPLE",
-        "CRM",
-        "CRM_INPUT",
-        "bronze_crm",
-        "customer",
-    )
-    source_attribute = attribute_mappings[1]["transformation"]["source_columns"][0]
-    assert tuple(source_attribute[field] for field in source_fields) == tuple(
-        source[field] for field in source_fields
-    )
-    assert source_attribute["attribute_name"] == "customer_id"
-    target_attributes = context["target_metadata"]["attributes"]
-    assert [item["target_attribute_name"] for item in attribute_mappings] == [
-        item["attribute_name"] for item in target_attributes
-    ]
-    assert [
-        item["target_attribute_ordinal_position"] for item in attribute_mappings
-    ] == [1, 2, 3]
-    generated_attributes = [
-        item["attribute_name"]
-        for item in target_attributes
-        if item["population"] == "database"
-    ]
-    assert generated_attributes == ["CustomerID"]
-    assert attribute_mappings[0]["transformation"]["source_columns"] == []
-    assert context["source_systems"][0]["source_system_value"] == 11
-    assert (
-        attribute_mappings[2]["transformation"]["transformation_logic"]
-        == "CAST(11 AS BIGINT)"
-    )
-    assert attribute_mappings[2]["transformation"]["source_columns"] == []
-    assert all(
-        item["transformation"]["default_record"] is None for item in attribute_mappings
-    )
-    sample = parse(object_mapping["transformation"]["sample_query"], read="databricks")
-    generated = parse(SQL_EXAMPLES[0], read="databricks")
-    assert isinstance(generated[0], exp.Create)
-    assert sample == [generated[0].expression]
-    final = sample[-1]
-    assert isinstance(final, exp.Select)
-    assert final.named_selects == [
-        item["attribute_name"]
-        for item in target_attributes
-        if item["population"] == "mapping"
-    ]
-    assert not set(generated_attributes).intersection(final.named_selects)
-
-
 @pytest.mark.parametrize("system_code", ("CRM", "ERP"))
 async def test_combined_example_branches_are_self_contained_for_per_system_layout(
     system_code: str,
@@ -411,12 +325,7 @@ async def test_combined_example_branches_are_self_contained_for_per_system_layou
     assert isinstance(stage, exp.Create) and isinstance(final, exp.Union)
     projection = final.this if branch_index == 0 else final.expression
     assert isinstance(projection, exp.Select)
-    sql = (
-        stage.sql(dialect="databricks")
-        + ";\n"
-        + projection.sql(dialect="databricks")
-        + ";"
-    )
+    sql = stage.sql(dialect="databricks") + ";\n" + projection.sql(dialect="databricks") + ";"
     validator = CodeGenerationCandidateValidator(
         targets=(
             CodeGenerationTargetReference(
@@ -445,9 +354,7 @@ async def test_combined_example_branches_are_self_contained_for_per_system_layou
 
 def test_full_mapping_documents_remain_grouped_by_system_across_reader_pages() -> None:
     raw = json.loads(
-        (
-            ROOT / "tests/web_backend/fixtures/downstream_prompt_contexts.json"
-        ).read_text()
+        (ROOT / "tests/web_backend/fixtures/downstream_prompt_contexts.json").read_text()
     )["code_generation"]
     context = raw["targets"][0]["context"]
     base_object = deepcopy(context["object_mappings"][0])
@@ -499,9 +406,7 @@ def test_full_mapping_documents_remain_grouped_by_system_across_reader_pages() -
             }
             attribute["transformation"] = document
             context["attribute_mappings"].append(attribute)
-            expected_documents[(system_code, f"Attribute{ordinal}")] = deepcopy(
-                document
-            )
+            expected_documents[(system_code, f"Attribute{ordinal}")] = deepcopy(document)
 
     values = project_downstream_inputs("code_generation", raw)
     catalog = build_downstream_readers(
@@ -520,10 +425,7 @@ def test_full_mapping_documents_remain_grouped_by_system_across_reader_pages() -
         for row in page["items"]:
             key = (row["source_system_code"], row["target_attribute_name"])
             assert key not in seen
-            assert (
-                row["modeled_entity_schema_name"]
-                == base_object["entity"]["entity_schema_name"]
-            )
+            assert row["modeled_entity_schema_name"] == base_object["entity"]["entity_schema_name"]
             assert row["modeled_entity_name"] == base_object["entity"]["entity_name"]
             seen[key] = row["transformation"]
         if page["next_cursor"] is None:
@@ -531,24 +433,152 @@ def test_full_mapping_documents_remain_grouped_by_system_across_reader_pages() -
             break
         assert page["is_complete"] is False
         assert page_count <= 10
-        page = catalog.invoke(
-            "get_attribute_transformations", {"cursor": page["next_cursor"]}
-        )
+        page = catalog.invoke("get_attribute_transformations", {"cursor": page["next_cursor"]})
     assert page_count == 10 and set(seen) == set(expected_documents)
     for key in seen:
         # Preserve every nested custom value and source reference without logging documents.
-        assert hashlib.sha256(
-            json.dumps(seen[key], sort_keys=True).encode()
-        ).digest() == (
-            hashlib.sha256(
-                json.dumps(expected_documents[key], sort_keys=True).encode()
-            ).digest()
+        assert hashlib.sha256(json.dumps(seen[key], sort_keys=True).encode()).digest() == (
+            hashlib.sha256(json.dumps(expected_documents[key], sort_keys=True).encode()).digest()
         )
     first = catalog.invoke("get_object_transformations", {})
-    second = catalog.invoke(
-        "get_object_transformations", {"cursor": first["next_cursor"]}
-    )
+    second = catalog.invoke("get_object_transformations", {"cursor": first["next_cursor"]})
     assert first["items"][0]["source_system_code"] == "CRM"
     assert second["items"][0]["source_system_code"] == "ERP"
     assert len(first["items"][0]["transformation"]["steps"]) == 3
     assert len(second["items"][0]["transformation"]["steps"]) == 3
+
+
+async def test_embedded_code_examples_deliver_the_mapped_rows_at_runtime() -> None:
+    """Run the exact SQL shown to the model, including the JSON it must return."""
+    studio = (
+        ROOT / "web_app/prompt_studio/prompts/code_generation.common.sql_generation.md"
+    ).read_text()
+    system = studio.split("<!-- ===== INSTRUCTION PROMPT ===== -->", 1)[0]
+    billing, combined = re.findall(r"^```sql\n(.*?)\n```$", system, re.M | re.S)
+    inputs, object_document, response = [
+        json.loads(block) for block in re.findall(r"^```json\n(.*?)\n```$", system, re.M | re.S)
+    ]
+    layout = inputs["artifact_requirements"]
+    target = inputs["target_metadata"]
+    assert object_document["sample_query"].startswith("FROM ")
+    assert "SELECT " not in object_document["sample_query"].upper()
+    assert "'WID_GDSBatchID'" in object_document["filter_criteria"]
+    assert parse(response["artifacts"][0]["generated_sql"], read="databricks") == parse(
+        billing, read="databricks"
+    )
+    for sql, branches in ((billing, ["erp"]), (combined, ["crm", "erp"])):
+        *views, final = parse(sql, read="databricks")
+        assert len(views) == len(branches)
+        for view, branch in zip(views, branches, strict=True):
+            assert isinstance(view, exp.Create) and isinstance(view.expression, exp.Subquery)
+            assert view.this.name.endswith(f"_{branch}")
+        assert isinstance(final, exp.Query)
+    joined_tables = {
+        (table["object_schema"], table["object_name"])
+        for table in object_document["source_tables"]
+        if "object_schema" in table
+    }
+    validator = CodeGenerationCandidateValidator(
+        targets=(
+            CodeGenerationTargetReference(
+                target_ref=inputs["target_ref"],
+                modeled_entity_id=1,
+                source_system_codes=tuple(layout["source_system_codes"]),
+                file_layout=layout["file_layout"],
+                batch_sources=tuple(
+                    (schema, table, "GDSBatchID") for schema, table in joined_tables
+                ),
+                lookup_system_codes=(),
+            ),
+        )
+    )
+    assert not (await validator.validate(response)).issues
+    assert validator.parse_validated(response)[0].source_system_codes == ("ERP",)
+
+    # The prior header/line, another instance, another System, and a missing
+    # optional Client distinguish correct joins from a query that only parses.
+    sources = {
+        "bronze_erp.billing_header": {
+            "columns": ["invoice_no", "instance_code", "client_no", "GDSBatchID", "status"],
+            "rows": [
+                ["I01", "EAST", "001", 28, "POSTED"],
+                ["I01", "WEST", "404", 28, "POSTED"],
+                ["I01", "EAST", "001", 27, "POSTED"],
+                ["X", "EAST", "001", 28, "DRAFT"],
+            ],
+        },
+        "bronze_erp.billing_line": {
+            "columns": [
+                "invoice_no",
+                "instance_code",
+                "line_no",
+                "GDSBatchID",
+                "quantity",
+                "unit_price",
+            ],
+            "rows": [
+                ["I01", "EAST", 1, 28, 2, 9],
+                ["I01", "WEST", 1, 28, 3, 9],
+                ["I01", "EAST", 1, 27, 20, 9],
+                ["X", "EAST", 1, 28, 2, 9],
+            ],
+        },
+        "silver.Client": {
+            "columns": [
+                "SourceClientNo",
+                "InstanceCode",
+                "SourceSystemID",
+                "ClientID",
+                "GDSBatchID",
+            ],
+            "rows": [
+                ["001", "EAST", 72, 101, 3],
+                ["001", "WEST", 72, 102, 3],
+                ["001", "EAST", 87, 103, 28],
+            ],
+        },
+        "meta.system": {"columns": ["SystemCode", "SystemID"], "rows": [["ERP", 72], ["CRM", 87]]},
+    }
+    columns, rows = execute_fixture_sql(billing.replace("'WID_GDSBatchID'", "28"), sources)
+    assert columns == [
+        a["attribute_name"] for a in target["attributes"] if a["population"] == "mapping"
+    ]
+    assert rows == [("I01", "EAST", 1, 101, 18, 72), ("I01", "WEST", 1, None, 27, 72)]
+
+    multi = CodeGenerationCandidateValidator(
+        targets=(
+            CodeGenerationTargetReference(
+                target_ref="target_2",
+                modeled_entity_id=2,
+                source_system_codes=("CRM", "ERP"),
+                file_layout="combined",
+                lookup_system_codes=(),
+            ),
+        )
+    )
+    assert not (
+        await multi.validate(
+            {
+                "issues": [],
+                "artifacts": [
+                    {
+                        "target_ref": "target_2",
+                        "artifact_name": "customer.sql",
+                        "artifact_role": "target_transformation",
+                        "source_system_codes": ["CRM", "ERP"],
+                        "generated_sql": combined,
+                    }
+                ],
+            }
+        )
+    ).issues
+    columns, rows = execute_fixture_sql(
+        combined,
+        {
+            "bronze_crm.customer": {"columns": ["customer_id"], "rows": [["01"]]},
+            "bronze_erp.customer": {"columns": ["customer_key"], "rows": [["01"]]},
+            "meta.system": sources["meta.system"],
+        },
+    )
+    assert columns == ["SourceCustomerID", "SourceSystemID"]
+    assert rows == [(1, 72), (1, 87)]

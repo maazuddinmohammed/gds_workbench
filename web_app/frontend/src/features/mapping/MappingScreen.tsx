@@ -22,6 +22,7 @@ export function MappingScreen({
   project,
   hasTenantLock,
   hasAppPermission,
+  canDelete,
   layer,
   systemCode,
 }: {
@@ -30,6 +31,7 @@ export function MappingScreen({
   project: ProjectDetail;
   hasTenantLock: boolean;
   hasAppPermission: boolean;
+  canDelete: boolean;
   layer: "logical" | "dimensional";
   /** The System tab from the address; undefined shows All Systems. */
   systemCode?: string | undefined;
@@ -180,7 +182,7 @@ export function MappingScreen({
       <ProjectRecordReview
         api={api} tenantId={tenantId} projectId={project.project_id} projectRevision={project.project_revision}
         dataset="mapping_object"
-        actions={["lock", "unlock", "deactivate", "reactivate", "delete"]}
+        actions={canDelete ? ["lock", "unlock", "deactivate", "reactivate", "delete"] : ["lock", "unlock", "deactivate", "reactivate"]}
         deleteIds={new Set(objects.data?.pages.flatMap((page) => page.items)
           .filter((item) => selectedIds.has(item.mapping_object_id) && !item.is_locked)
           .map((item) => item.mapping_object_id) ?? [])}

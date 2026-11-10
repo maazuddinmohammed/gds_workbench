@@ -61,7 +61,7 @@
         {
           "attribute_name": "ReferenceText",
           "attribute_data_type": "STRING",
-          "attribute_definition": "Optional reference from same-batch dispatch detail.",
+          "attribute_definition": "Dispatch reference amount formatted as text for this originating System.",
           "is_nullable": true,
           "is_audit_column": false,
           "is_surrogate_key": false,
@@ -147,7 +147,7 @@
       },
       {
         "role": "candidate",
-        "rationale": "Directory feeding the applied Depot Mapping.",
+        "rationale": "Eligible depot directory cited by the natural key lineage of silver.Depot.",
         "is_locked": false,
         "object": {
           "tenant_code": "DEMO",
@@ -155,7 +155,7 @@
           "connection_code": "WAREHOUSE",
           "object_schema": "bronze",
           "object_name": "depot_directory",
-          "object_description": "Directory feeding the applied Depot Mapping.",
+          "object_description": "Eligible depot directory cited by the natural key lineage of silver.Depot.",
           "batch_attribute_name": null,
           "zone_code": "bronze",
           "is_global_data_store": true,
@@ -387,7 +387,7 @@
             {
               "attribute_name": "ReferenceText",
               "attribute_data_type": "STRING",
-              "attribute_definition": "Optional reference from same-batch dispatch detail.",
+              "attribute_definition": "Dispatch reference amount formatted as text for this originating System.",
               "is_nullable": true,
               "is_audit_column": false,
               "is_surrogate_key": false,
@@ -901,7 +901,7 @@
       }
     },
     "additionalProperties": false,
-    "description": "Return only the Mapping transformation content. Identity, lifecycle status, templates and provenance are derived by the backend. Partial output is valid: return supported Object and Attribute transformations and leave unsupported documents null or omit them. Missing selected transformations are cleared; locked and unselected mappings are preserved. Return no transformations when nothing is supported. Never invent rules to fill blanks. A System contributes only when it supplies a supported business rowset or business Attribute transformation. Generated surrogate keys, audit/history population, and 'omit from load select' notes alone are not a contribution. For such a pair return outcome no_applicable_source, object_mapping null and attribute_mappings []. For the standard templates a new sample_query may use SELECT <mapped_columns> FROM ... . Supply each projected Attribute's SQL expression in transformation_logic without its output alias and with default_record null. The backend supplies the ordered SELECT list. Use a full query for separate defaults or multi-branch logic.",
+    "description": "Return only the Mapping transformation content. Identity, lifecycle status, templates and provenance are derived by the backend. Partial output is valid: return supported Object and Attribute transformations and leave unsupported documents null or omit them. Missing selected transformations are cleared; locked and unselected mappings are preserved. Return no transformations when nothing is supported. Never invent rules to fill blanks. A System contributes only when it supplies a supported business rowset or business Attribute transformation. Generated surrogate keys, audit/history population, and 'omit from load select' notes alone are not a contribution. For such a pair return outcome no_applicable_source, object_mapping null and attribute_mappings []. In sample_query describe the driver, joins and shared steps. Put row filters in filter_criteria and each column's value in its own transformation_logic.",
     "properties": {
       "schema_version": {
         "const": "1.0",
@@ -985,10 +985,7 @@
       }
     ],
     "rowset_check": {
-      "description": "Supplement to Studio's field-name score. Bind the synthetic values below to the Object sample_query and compare rows by SourceDispatchNo. Excludes framework-generated attributes.",
-      "system_values": {
-        "SHIP": 7
-      },
+      "description": "Check SQL generated from the complete Mapping (shared joins, row filters and field rules). Substitute the synthetic batch and compare by SourceDispatchNo.",
       "sources": {
         "bronze.dispatch": {
           "columns": [
@@ -1042,7 +1039,13 @@
               301,
               "AA",
               8,
-              15
+              12
+            ],
+            [
+              302,
+              "BZ",
+              8,
+              10
             ]
           ]
         },
@@ -1089,6 +1092,22 @@
               0
             ]
           ]
+        },
+        "meta.system": {
+          "columns": [
+            "SystemCode",
+            "SystemID"
+          ],
+          "rows": [
+            [
+              "SHIP",
+              7
+            ],
+            [
+              "FLEET",
+              8
+            ]
+          ]
         }
       },
       "columns": [
@@ -1115,7 +1134,7 @@
         ]
       ],
       "replace": {
-        "wid_GDSBatchID": "15"
+        "'WID_GDSBatchID'": "15"
       }
     }
   }

@@ -955,6 +955,28 @@ const agentCapabilities = {
 };
 
 
+it.each(["super_admin", "architect"])("offers saved SQL deletion preview only to administrators (%s)", async (role) => {
+  const { fetcher, commands } = withRecordReview(codeGenerationFetchStub({ role }), {
+    project_id: 18, project_revision: 18, dataset: "generated_code", next_page: null,
+    items: [{ record_id: 501, label: "Customer · customer.sql", status: "active", is_locked: false }],
+  });
+  render(<AtlasPlatformApp router={createAtlasPlatformRouter({ api: createApiClient(fetcher),
+    history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/projects/18"] }),
+  })} />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "SQL files" }));
+  await user.click(await screen.findByRole("checkbox", { name: "Select SQL files 501" }));
+  expect(screen.getByRole("button", { name: "Deactivate selected" })).toBeEnabled();
+  if (role === "architect") {
+    expect(screen.queryByRole("button", { name: "Delete selected" })).not.toBeInTheDocument();
+    return;
+  }
+  await user.click(screen.getByRole("button", { name: "Delete selected" }));
+  await waitFor(() => expect(commands[0]).toEqual({
+    action: "delete", dataset: "generated_code", record_ids: [501], expected_project_revision: 18,
+  }));
+});
+
 it("finds and reactivates inactive Code without an eligible generation target", async () => {
   const { fetcher, commands } = withRecordReview(codeGenerationFetchStub({ empty: true }), {
     project_id: 18, project_revision: 18, dataset: "generated_code", next_page: null,

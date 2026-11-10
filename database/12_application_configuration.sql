@@ -863,7 +863,7 @@ BEGIN
             WHEN 'subject_area' THEN ARRAY['get_source_context', 'get_gds_context', 'get_scope_tables', 'get_table_links', 'get_subject_areas', 'get_context_records']
             WHEN 'logical' THEN ARRAY['get_source_context', 'get_gds_context', 'get_objects', 'get_object_details', 'get_object_relationships', 'get_context_records', 'get_logical_entities', 'get_logical_attributes', 'get_logical_relationships']
             WHEN 'dimensional' THEN ARRAY['get_source_context', 'get_gds_context', 'get_objects', 'get_object_details', 'get_object_relationships', 'get_selected_logical_entities', 'get_context_records', 'get_logical_entities', 'get_logical_attributes', 'get_logical_relationships', 'get_dimensional_entities', 'get_dimensional_attributes', 'get_dimensional_relationships']
-            WHEN 'mapping' THEN ARRAY['get_mapping_target', 'get_mapping_sources', 'get_existing_mapping', 'get_mapping_support', 'get_mapping_support_records', 'get_mapping_basis']
+            WHEN 'mapping' THEN ARRAY['get_mapping_target', 'get_mapping_sources', 'get_existing_mapping', 'get_mapping_support', 'get_mapping_support_records', 'get_mapping_basis', 'get_mapping_fk_evidence']
             WHEN 'code_generation' THEN ARRAY['get_code_target', 'get_code_sources', 'get_code_source_systems', 'get_object_transformations', 'get_attribute_transformations']
             WHEN 'validation' THEN ARRAY['get_mapping_evidence', 'get_validation_basis', 'get_current_code', 'get_applied_groups', 'get_applied_checks']
             ELSE ARRAY[]::TEXT[]

@@ -136,8 +136,7 @@
     "source_systems": [
       {
         "system_code": "CRM",
-        "system_name": "CRM",
-        "source_system_value": 31
+        "system_name": "CRM"
       }
     ],
     "object_transformations": [
@@ -162,8 +161,8 @@
               "object_name": "users"
             }
           ],
-          "filter_criteria": "Keep rows where s.is_enabled = TRUE before projection.",
-          "sample_query": "SELECT s.user_id AS SourceUserID, TRIM(s.display_name) AS DisplayName, CAST(31 AS BIGINT) AS SourceSystemID FROM bronze_crm.users s WHERE s.is_enabled = TRUE;"
+          "filter_criteria": "s.is_enabled = TRUE",
+          "sample_query": "FROM bronze_crm.users s LEFT JOIN meta.system sys ON sys.SystemCode = 'CRM'"
         },
         "output_template_code": null,
         "source_system_code": "CRM"
@@ -239,7 +238,7 @@
         "target_attribute_ordinal_position": 4,
         "output_template_code": null,
         "transformation": {
-          "transformation_logic": "CAST(31 AS BIGINT)",
+          "transformation_logic": "sys.SystemID",
           "default_record": null,
           "source_columns": []
         },
@@ -269,7 +268,7 @@
         "source_system_codes": [
           "CRM"
         ],
-        "generated_sql": "SELECT s.user_id AS SourceUserID, TRIM(s.display_name) AS DisplayName, CAST(31 AS BIGINT) AS SourceSystemID FROM bronze_crm.users s WHERE s.is_enabled = TRUE;"
+        "generated_sql": "SELECT s.user_id AS SourceUserID, TRIM(s.display_name) AS DisplayName, CAST(sys.SystemID AS BIGINT) AS SourceSystemID FROM bronze_crm.users s LEFT JOIN meta.system AS sys ON sys.SystemCode = 'CRM' WHERE s.is_enabled = TRUE;"
       }
     ]
   },

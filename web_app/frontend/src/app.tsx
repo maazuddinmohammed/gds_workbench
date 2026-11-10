@@ -604,6 +604,7 @@ function TenantMappingProject() {
           project={project}
           hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true}
           hasAppPermission={canAuthorProjects(home.tenant.effective_role)}
+          canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"}
         />
       )}
     </ProjectRouteFrame>
@@ -724,6 +725,7 @@ function TenantCodeGenerationProject() {
           project={project}
           hasTenantLock={!project.is_locked && home.lock.owned_by_current_principal === true}
           hasAppPermission={canAuthorProjects(home.tenant.effective_role)}
+          canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"}
         />
       )}
     </ProjectRouteFrame>

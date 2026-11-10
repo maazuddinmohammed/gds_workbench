@@ -44,7 +44,7 @@ For each active modeled Attribute and contributing System, state its actual sour
 - **Constant/generated business value:** actual constant or supported generation rule and its provenance. No fabricated physical source; unconfirmed constants/defaults remain unresolved.
 - **Own surrogate:** explicitly database-generated; omit from the load SELECT. Preserve its exact target column/type in the complete Mapping view.
 - **Framework audit:** explicitly framework-populated; omit from the load SELECT. Keep a Mapping record for each such bound field, with no fabricated expression or source.
-- **SourceSystemID:** provide the actual originating-System value/expression per branch. It is the last SQL-populated column; physical GDS placement is not source provenance.
+- **SourceSystemID:** look up the originating System code in `meta.system` and use its `SystemID`. It is the last SQL-populated column; physical GDS placement is not source provenance.
 
 The approved [audit policy](keys-and-audit.md#population-boundary-and-implementation-alignment) identifies the nine framework fields and optional Source audit fields. Resolve the actual policy while authoring and capture the applicable population in the Mapping; downstream readers should not rederive it from project flags. No inference that every surrogate-looking name is generated.
 
@@ -60,7 +60,7 @@ Each branch returns the same ordered physical aliases and compatible types. UNIO
 
 Mapping states the output and key rules; the framework performs target loading. The shared [SQL workflow instructions](../code-generation/sql.md) translates those rules into self-contained temporary-view stages and one final explicit-column SELECT. Framework SQL uses resolved `schema.table` coordinates without catalog under the confirmed GDS runtime convention; evidence queries use their governed execution coordinates. Resolve incompatible cross-catalog placement explicitly instead of redirecting a source.
 
-The standard GDS consumer replaces the literal numeric token `wid_GDSBatchID` before executing SQL. For a batched driver, use its registered batch column and that bare token. Joined Bronze inputs from the same load also match batch columns in ON alongside the complete business key/instance; optional inputs keep their predicates in ON. Explicitly unbatched inputs need no batch predicate. Silver/Gold parent lookups may find records loaded earlier and use their business-key/namespace and current/as-of rules independently of the driver batch. Never copy a profiling batch literal, declare a widget or invent a different parameter syntax. Explicit alternative populations require their supported rule. Python logic must preserve the same mapped row/field semantics; its artifact/entrypoint convention belongs to Code Generation. Current backend Code Generation authoring supports SQL; Python consumer support remains to be designed and implemented.
+A Bronze driver with a registered batch column uses the quoted token `'WID_GDSBatchID'`. Match a batched Bronze helper on business keys and batch. An unregistered batch column needs no predicate. Silver/Gold parent lookups use business keys, System and any modeled version rule. Resolve a System with `LEFT JOIN meta.system AS sys ON sys.SystemCode = '<code>'` and use `sys.SystemID`. Python logic must preserve the same mapped row/field semantics; its artifact/entrypoint convention belongs to Code Generation. Current backend Code Generation authoring supports SQL; Python consumer support remains to be designed and implemented.
 
 ## Complete context for coding and validation
 
@@ -97,7 +97,7 @@ Read all five components listed above. Each response supplies `project_id`, `pro
 
 Cache only the assembled component records and their Project/target/System/revision/digest bindings as read-only task input. Do not keep opaque tool envelopes or fabricate missing columns. On changed revision/digest, refresh all components; never combine old and new pages. `complete=false` and `issues` remain authoritative findings: Code may expose absent Attribute transformations as typed NULL placeholders in the known target types/order, while Validation must resolve every issue before authoring. A missing Object document requires an explicit review finding; never invent source rows, joins or business rules. When row-producing evidence is unavailable, emit a typed zero-row projection. Malformed non-null documents, contradictory authored rules and unresolved source identities still require correction; the partial allowance does not make those valid. Additional lookups named by Mapping are checked under the same governed eligibility.
 
-The backend resolves foreign SQL coordinates, physical columns/types, batch declarations, key/audit population, the originating SourceSystemID value and eligible lookup inputs. Mapping still owns business rules, exact predicates, grain, precedence and any runtime placeholder semantics. A derived view cannot turn ambiguous prose into a confirmed decision.
+The backend resolves foreign SQL coordinates, physical columns/types, batch declarations, key/audit population, the originating System code and eligible lookup inputs. Mapping still owns business rules, exact predicates, grain, precedence and any runtime placeholder semantics. A derived view cannot turn ambiguous prose into a confirmed decision.
 
 ## Concise examples
 
@@ -118,7 +118,7 @@ CRM Object inner document:
     }
   ],
   "steps": [
-    "Read bronze.crm_customer as c at one row per customer_reference. No joins, filters, batching, aggregation or deduplication apply.",
+    "Read bronze.crm_customer as c at one row per customer_reference. Left join meta.system as sys on sys.SystemCode = 'CRM'.",
     "Apply Attribute transformations and return CustomerCode, CustomerName, SourceSystemID in that order for silver.Customer. CustomerID is database-generated; the audit fields marked framework-populated are omitted.",
     "Output grain and merge key are (SourceSystemID, CustomerCode). CRM and ERP preserve separate identities with disjoint keys; aligned branches may use UNION ALL. No predecessor target is required; the runtime loads the result."
   ]
@@ -143,7 +143,7 @@ CustomerCode Attribute inner document:
 }
 ```
 
-Other example field rules: CustomerName returns `NULLIF(TRIM(c.display_name), '')` as nullable STRING; SourceSystemID returns the verified registered `c.source_system_id` as BIGINT. Include their exact Attribute lineage in the actual documents. The CustomerID rule says database-generated, omitted from SELECT; each framework field has its own corresponding omission rule. These examples illustrate inner documents, not complete table coverage.
+Other example field rules: CustomerName returns `NULLIF(TRIM(c.display_name), '')` as nullable STRING; SourceSystemID returns `sys.SystemID` from the CRM lookup. Include their exact Attribute lineage in the actual documents. The CustomerID rule says database-generated, omitted from SELECT; each framework field has its own corresponding omission rule. These examples illustrate inner documents, not complete table coverage.
 
 ERP receives its own documents using the actual ERP source columns and the same final target projection. Source-specific field differences remain in those Attribute rules. The Mapping does not assign file names.
 

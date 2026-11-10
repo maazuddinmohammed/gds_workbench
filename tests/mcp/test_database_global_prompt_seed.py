@@ -213,7 +213,16 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
 
     first = _snapshot(postgres_database)
     assert all("\n" in str(row["system_prompt_template"]) for row in first)
-    assert all("\\n" not in str(row["system_prompt_template"]) for row in first)
+    # Prose must store real line breaks. Inside fenced JSON, a string can encode
+    # its own line breaks (for example a multiline Mapping join plan).
+    for row in first:
+        parts = re.split(
+            r"^```json\n(.*?)\n```$", str(row["system_prompt_template"]), flags=re.M | re.S
+        )
+        for index, part in enumerate(parts):
+            if "\\n" in part:
+                assert index % 2 == 1, "Unexpected escaped newline outside a JSON example"
+                json.loads(part)
     assert all("\\n" not in str(row["instruction_prompt_template"]) for row in first)
     stage_identities = [
         (

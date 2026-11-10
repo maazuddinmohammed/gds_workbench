@@ -131,14 +131,12 @@ validating the proposal.
 Use the registered source identity and the comparison rules for each modeled
 relationship. The mapped return field can be a natural key or a surrogate key.
 
-For a standard single SELECT, the agent can write each value expression in its
-Attribute document and use `SELECT <mapped_columns> FROM ...` for the Object
-sample. A read-only CTE may prepare that rowset. Before saving, the backend
-inserts the mapped expressions in target order with their aliases. Code Generation
-receives the expanded sample. Transformations
-with different projections per branch or separate default-record rules use a full
-sample query. See [current decisions](architecture/decisions.md) for partial
-Mapping, locked fields and the scope of the selected target.
+The default Object document describes the driving input, joins and shared steps in
+`sample_query` and the row filters in `filter_criteria`. Each Attribute document
+describes its value once in `transformation_logic`. Code Generation writes the SELECT.
+Older saved SQL samples remain usable. For each modeled foreign key, one-shot includes
+the relevant child lineage, parent keys and related source joins. Tool-assisted can
+request this evidence for a field with `get_mapping_fk_evidence`.
 
 Code reads Object-level rowset/filter/stage logic and Attribute expressions together.
 Its `artifact_requirements` is only frozen file layout, selected source-System codes

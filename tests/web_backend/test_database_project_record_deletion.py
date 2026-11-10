@@ -55,6 +55,8 @@ from tests.mcp.test_database_project_change_set_round_trip import (
         ("logical", "entity"),
         ("logical", "attribute"),
         ("dimensional", "entity"),
+        ("logical", "mapping_object"),
+        ("logical", "generated_code"),
     ],
 )
 async def test_permanent_clear_includes_supports_and_replays_without_restoring_rows(
@@ -98,11 +100,10 @@ async def test_permanent_clear_includes_supports_and_replays_without_restoring_r
     )
     principal = StaticIdentityProvider().request_principal(None)
     # A layer is cleared through its root dataset: Subject Areas or Entities.
+    standalone = selection in {"mapping_object", "generated_code"}
     root = "subject_area" if layer == "subject_area" else f"{layer}_entity"
-    dataset = cast(
-        ProjectReviewDataset,
-        root if selection in {"clear", "area"} else f"{layer}_{selection}",
-    )
+    selected_dataset = root if selection in {"clear", "area"} else f"{layer}_{selection}"
+    dataset = cast(ProjectReviewDataset, selection if standalone else selected_dataset)
     await database.open()
     try:
         async with database.read_transaction() as transaction:
@@ -173,7 +174,8 @@ async def test_permanent_clear_includes_supports_and_replays_without_restoring_r
                         FROM workflow.modeled_entity WHERE project_id = %s
                           AND modeled_entity_type = 'logical_entity'
                         ORDER BY modeled_entity_id LIMIT 1
-                    RETURNING workflow_run_entity_selection_id,workflow_run_id,project_id,modeled_entity_id
+                    RETURNING workflow_run_entity_selection_id, workflow_run_id,
+                              project_id, modeled_entity_id
                 )
                 INSERT INTO application.workflow_run_mapping_target_selection (
                     workflow_run_entity_selection_id,workflow_run_id,project_id,source_system_id,selection_order
@@ -194,11 +196,15 @@ async def test_permanent_clear_includes_supports_and_replays_without_restoring_r
         )
         assert preview.can_apply and preview.action_count > 0
         assert all(item.desired_status == "deleted" for item in preview.items)
-        assert any(
-            name.endswith(("_source_mapping", "subject_area_table"))
-            for name in preview.changes_by_dataset
-        )
-        if layer == "logical":
+        if standalone:
+            expected = {"generated_code", "generated_code_source_system"}
+            if selection == "mapping_object":
+                # The selected Mapping is this System's last one.
+                expected.update(
+                    {"mapping_object", "mapping_attribute", "validation_group", "validation_check"}
+                )
+            assert set(preview.changes_by_dataset) == expected
+        elif layer == "logical":
             assert all(
                 preview.changes_by_dataset.get(kind, 0) > 0
                 for kind in (
@@ -208,11 +214,12 @@ async def test_permanent_clear_includes_supports_and_replays_without_restoring_r
                     "generated_code_source_system",
                 )
             )
-        support = next(
-            item
-            for item in preview.items
-            if item.dataset.endswith(("_source_mapping", "subject_area_table"))
+        support_types = (
+            ("generated_code_source_system",)
+            if standalone
+            else ("_source_mapping", "subject_area_table")
         )
+        support = next(item for item in preview.items if item.dataset.endswith(support_types))
         with fixture.connect_owner() as connection:
             connection.execute(
                 sql.SQL("UPDATE workflow.{} SET {} = TRUE WHERE {} = %s").format(
@@ -316,6 +323,12 @@ async def test_permanent_clear_includes_supports_and_replays_without_restoring_r
                 remaining.records_by_id.get(dataset, {})
             )
         assert remaining.snapshot.context.records
+        if standalone:
+            assert remaining.snapshot.logical == before.snapshot.logical
+            assert remaining.snapshot.dimensional == before.snapshot.dimensional
+            if selection == "generated_code":
+                assert remaining.snapshot.mapping == before.snapshot.mapping
+                assert remaining.snapshot.validation == before.snapshot.validation
         if layer == "subject_area":
             assert (
                 remaining.snapshot.logical.entities

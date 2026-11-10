@@ -52,12 +52,14 @@ def project_mapping_inputs(context: dict[str, Any], *, workflow: str | None) -> 
     objects = {row["mapping_object_id"]: row for row in context["object_mappings"]}
     sources: list[dict[str, Any]] = []
     for row in context["physical_sources"]:
-        sources.append(
-            {
-                **without_internal_fields(row),
-                "source_system_code": systems[row["selected_source_system_id"]],
-            }
-        )
+        source = {
+            **without_internal_fields(row),
+            "source_system_code": systems[row["selected_source_system_id"]],
+        }
+        if workflow == "code_generation":
+            for binding in source.get("source_system_bindings", []):
+                binding.pop("source_system_value", None)
+        sources.append(source)
     object_mappings: list[dict[str, Any]] = []
     for row in context["object_mappings"]:
         projected = {
@@ -133,7 +135,9 @@ def project_mapping_inputs(context: dict[str, Any], *, workflow: str | None) -> 
         "target_metadata": target,
         "source_metadata": sources,
         "source_systems": [
-            {**without_internal_fields(row), "source_system_value": row["source_system_id"]}
+            without_internal_fields(row)
+            if workflow == "code_generation"
+            else {**without_internal_fields(row), "source_system_value": row["source_system_id"]}
             for row in context["source_systems"]
         ],
         "object_transformations": object_mappings,

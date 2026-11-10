@@ -18,6 +18,7 @@ from atlas_mcp.domain.modeling_records import normalize_project_key_value
 
 from .context_inputs import OBJECT_FIELDS, natural_key
 from .context_readers import FrozenContextReaders, ReaderSpecs
+from .mapping_fk_evidence import mapping_fk_evidence, select_fk_evidence
 from .validation_evidence import validation_basis
 
 
@@ -25,6 +26,11 @@ def downstream_reader_specs(workflow: str) -> ReaderSpecs:
     if workflow == "mapping":
         return {
             "get_mapping_basis": ("mapping_basis", "candidate_refs", ("ref",)),
+            "get_mapping_fk_evidence": (
+                "mapping_basis",
+                "target_attribute_names",
+                ("attribute_name",),
+            ),
             "get_mapping_target": ("target_metadata", None, ()),
             "get_mapping_sources": ("source_evidence", "source_object_keys", OBJECT_FIELDS),
             "get_existing_mapping": ("existing_mapping", None, ()),
@@ -70,6 +76,7 @@ def downstream_reader_specs(workflow: str) -> ReaderSpecs:
 class DownstreamContextReaders(FrozenContextReaders):
     """Resolve nested physical keys without flattening their evidence records."""
 
+    defer_fk_details: bool = False
     mapping_pair_pages: Callable[[tuple[str, ...]], list[dict[str, Any]]] | None = None
 
     @property
@@ -108,6 +115,27 @@ class DownstreamContextReaders(FrozenContextReaders):
 
     def _select(self, tool: str, selection: Any) -> Any:
         variable, selector, fields = self._specs[tool]
+        if tool == "get_mapping_fk_evidence":
+            cards, _ = self._mapping_directory
+            roles = [card for card in cards if card["kind"] == "fk_role"]
+            if not selection:
+                return roles
+            wanted = {normalize_project_key_value(name) for name in selection}
+            if not wanted <= {
+                normalize_project_key_value(card["record"]["target_attribute_name"])
+                for card in roles
+            }:
+                self._invalid()
+            return select_fk_evidence(
+                cards,
+                [
+                    card["record"]
+                    for card in roles
+                    if normalize_project_key_value(card["record"]["target_attribute_name"])
+                    in wanted
+                ],
+                core=False,
+            )
         if variable == "validation_basis":
             core, details = self._validation_directory
             if not selection:
@@ -138,11 +166,20 @@ class DownstreamContextReaders(FrozenContextReaders):
         if variable == "mapping_basis":
             if self.mapping_pair_pages is not None:
                 try:
-                    return self.mapping_pair_pages(tuple(selection or ()))
+                    rows = self.mapping_pair_pages(tuple(selection or ()))
+                    if self.defer_fk_details and not selection:
+                        return select_fk_evidence(
+                            rows, [c["record"] for c in rows if c["kind"] == "fk_role"], core=True
+                        )
+                    return rows
                 except KeyError:
                     self._invalid()
             core, candidates = self._mapping_directory
             if not selection:
+                if self.defer_fk_details:
+                    return select_fk_evidence(
+                        core, [c["record"] for c in core if c["kind"] == "fk_role"], core=True
+                    )
                 return core
             wanted = set(selection)
             if not wanted <= candidates.keys():
@@ -273,7 +310,7 @@ def build_downstream_readers(
 
 
 def compact_mapping_basis(
-    values: Mapping[str, Any], *, source_refs: Sequence[str] | None = None
+    values: Mapping[str, Any], *, source_refs: Sequence[str] | None = None, include_fk: bool = True
 ) -> list[dict[str, Any]]:
     """One target, one field per ordinal and a pageable dictionary of eligible inputs."""
     target = values["target_metadata"]
@@ -305,7 +342,7 @@ def compact_mapping_basis(
     )
     if header["transformation_document"] is not None:
         target_record["saved"] = header["transformation_document"]
-    cards = [{"kind": "target", "record": target_record}]
+    cards: list[dict[str, Any]] = [{"kind": "target", "record": target_record}]
     for attribute in sorted(target["attributes"], key=lambda row: row["ordinal_position"]):
         name = attribute["attribute_name"]
         field = {
@@ -316,6 +353,7 @@ def compact_mapping_basis(
                 if key != "modeled_attribute_name"
             },
             "action": actions.get(name),
+            "has_saved_rule": name in saved,
         }
         if name in saved:
             field["saved"] = saved[name]
@@ -391,7 +429,16 @@ def compact_mapping_basis(
         for card in support
         if card["evidence_type"] != "target_attribute_lineage"
     )
-    return cards + candidates
+    cards.extend(candidates)
+    if include_fk:
+        cards.extend(
+            mapping_fk_evidence(
+                cards,
+                sources,
+                (card["record"] for card in cards if card["kind"] == "analysis_relationship"),
+            )
+        )
+    return cards
 
 
 def project_downstream_inputs(

@@ -37,6 +37,7 @@ from atlas_platform.features.workflows.authoring.downstream_inputs import (
     compact_mapping_basis,
     project_downstream_inputs,
 )
+from atlas_platform.features.workflows.authoring.mapping_fk_evidence import mapping_fk_evidence
 from atlas_platform.features.workflows.authoring.plan import (
     WorkflowExecutionMode,
 )
@@ -315,6 +316,10 @@ def build_mapping_execution_context(
             max_page_records=selected_limits.max_tool_page_records,
             max_cumulative_result_bytes=selected_limits.max_tool_transcript_bytes,
         )
+        catalog.defer_fk_details = (
+            stage.agent_tool_names is not None
+            and "get_mapping_fk_evidence" in stage.agent_tool_names
+        )
         if pair.deferred or pair.has_lookups:
             # Cursors can request the same selection over many pages. Cache only the last
             # selection so arbitrary combinations cannot grow the retained result set.
@@ -553,6 +558,7 @@ class _MappingPairBasis:
                 "mapping_support_records": _mapping_support_records(scoped, support),
             },
             source_refs=ordered,
+            include_fk=False,
         )
         if not include_mapping_details and self.has_lookups:
             lookups = {
@@ -642,6 +648,15 @@ class _MappingPairBasis:
                     card["record"]["deferred_mapping_systems"] = sorted(
                         deferred_systems[card["record"]["ref"]], key=str.casefold
                     )
+        if not include_mapping_details:
+            support_all = self.values["mapping_support"]
+            cards.extend(
+                mapping_fk_evidence(
+                    cards,
+                    [row for _, row in self.sources.values()],
+                    support_all["source_relationships"],
+                )
+            )
         if refs == self.focus:
             cards.extend(self.source_directory(set(self.join_details)))
             cards.extend(self.join_summaries)
