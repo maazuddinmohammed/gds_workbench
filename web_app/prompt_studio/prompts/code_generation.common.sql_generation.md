@@ -36,9 +36,9 @@ Every page has `items`, `is_complete`, `next_cursor` and `incomplete_object_key`
 
 ## [S4] Translate the Mapping
 
-1. Identify the driver and what one target row represents. In the default Object document, `source_tables` identifies inputs, `sample_query` is a FROM/join sketch (it may include grouping or other stages), and `filter_criteria` supplies filters. Older samples may contain a full SELECT. Explicit Attribute rules and filters take precedence over a sample. Custom documents follow their own field definitions.
+1. Identify the driver and target grain. In the default Object document, `source_tables` identifies inputs. In `sample_query`, read `-- Join plan` for the FROM, aliases and joins. If `-- Object-level transformations` follows, translate its named pseudocode steps into relational operations before their results are used. Apply each `filter_criteria` predicate at its stated input or step. Translate older unlabeled sketches and full SELECT samples using the same row logic. Explicit Attribute rules supply the final projections. Custom documents follow their field definitions.
 2. Build the rowset once per branch. Keep the mapped join type and operands, including roles, instance discriminators, time ranges and unmatched rows. Keep optional parent filters in ON. If details are one-to-many, apply the mapped aggregation before joining. A generated-key FK takes the **returned key** from the correct parent alias. A child's business identifier is a match operand.
-3. For a registered Bronze batch slice, write the exact quoted orchestration token, e.g. `l.GDSBatchID = 'WID_GDSBatchID'`. Align joined Bronze tables from that load on their business keys **and** their registered batch columns. With no batch column, omit the batch predicate. A Silver/Gold parent may come from an earlier load; use its modeled keys and any mapped version rule.
+3. For an orchestration batch slice, use the input's registered batch column and the exact quoted token, e.g. `m.gds_batch_id = 'wid_gdsbatchid'`. This equality fully selects the run batch. If an older applied Mapping uses a differently cased or unquoted token, emit the canonical token. If its filters, sample or shared steps use MAX(batch), rank or latest-per-key to choose the run batch, replace that choice with the equality. Remove an extra latest-batch condition even when the equality is already present. Keep independent mapped predicates, keys, business aggregations and as-of rules. Join same-load Bronze inputs on their business keys and registered batch columns. With no registered batch column, omit the batch predicate. A Silver/Gold parent may come from an earlier load.
 4. For the branch's `SourceSystemID`, use `LEFT JOIN meta.system AS sys ON sys.SystemCode = 'ERP'` (substitute the real System code) and project `sys.SystemID`. SystemCode alone is the join key. If Mapping names another parent System, left join `meta.system` under a separate alias for **that** code, then match the parent using its SystemID. Preserve legitimate upstream provenance comparisons. Older placeholders or Atlas numeric IDs need the evidenced business System, resolved at runtime by code. If its identity is unclear, report the gap.
 5. For every active Mapping-owned field read `transformation_logic`, its `source_columns`, and any explicit `default_record`. Preserve aliases, leading zeros, cast precision, and distinctions between missing, zero and false. Never add TRY_CAST, defaults, deduplication or latest-wins rules without Mapping evidence. Follow target population: omit the own generated surrogate, nine framework audit fields and applicable Type 2 fields under standard policy; retain mapped business identifiers, FKs and provenance.
 
@@ -87,8 +87,8 @@ The Object reader returns one ERP row for `silver.ClientBilling`, using `mapping
     {"tenant_code":"ACME","system_code":"GDS","connection_code":"LAKE","object_schema":"bronze_erp","object_name":"billing_line"},
     {"entity_type":"logical_entity","entity_schema_name":"silver","entity_name":"Client"}
   ],
-  "sample_query":"FROM bronze_erp.billing_header h INNER JOIN bronze_erp.billing_line l ON invoice_no, instance_code and GDSBatchID. LEFT JOIN meta.system sys ON sys.SystemCode = 'ERP'. LEFT JOIN silver.Client c ON c.SourceClientNo = h.client_no AND c.InstanceCode = h.instance_code AND c.SourceSystemID = sys.SystemID.",
-  "filter_criteria":"Use posted headers h.status = 'POSTED' from h.GDSBatchID = 'WID_GDSBatchID'."
+  "sample_query":"-- Join plan\nFROM posted_headers AS h\nINNER JOIN bronze_erp.billing_line AS l\n    ON l.invoice_no = h.invoice_no\n    AND l.instance_code = h.instance_code\n    AND l.GDSBatchID = h.GDSBatchID\nLEFT JOIN meta.system AS sys\n    ON sys.SystemCode = 'ERP'\nLEFT JOIN silver.Client AS c\n    ON c.SourceClientNo = h.client_no\n    AND c.InstanceCode = h.instance_code\n    AND c.SourceSystemID = sys.SystemID\n\n-- Object-level transformations\nposted_headers: read bronze_erp.billing_header AS h using filter_criteria. Keep one row per invoice and instance in the requested batch.",
+  "filter_criteria":"On bronze_erp.billing_header AS h, apply h.GDSBatchID = 'wid_gdsbatchid' AND h.status = 'POSTED'."
 }
 ```
 
@@ -118,7 +118,7 @@ CREATE OR REPLACE TEMPORARY VIEW temp_client_billing_erp AS (
             bronze_erp.billing_header AS h
         WHERE
             h.status = 'POSTED'
-            AND h.GDSBatchID = 'WID_GDSBatchID'
+            AND h.GDSBatchID = 'wid_gdsbatchid'
     )
     SELECT
         h.invoice_no AS SourceInvoiceNo,
@@ -168,7 +168,7 @@ Complete JSON response for this request. For readability of the JSON envelope on
       "source_system_codes": [
         "ERP"
       ],
-      "generated_sql": "CREATE OR REPLACE TEMPORARY VIEW temp_client_billing_erp AS ( WITH posted_headers AS ( SELECT h.invoice_no, h.instance_code, h.client_no, h.GDSBatchID FROM bronze_erp.billing_header AS h WHERE h.status = 'POSTED' AND h.GDSBatchID = 'WID_GDSBatchID' ) SELECT h.invoice_no AS SourceInvoiceNo, h.instance_code AS InstanceCode, l.line_no AS LineNumber, c.ClientID AS ClientID, CAST(l.quantity * l.unit_price AS DECIMAL(18, 2)) AS BilledAmount, sys.SystemID AS SourceSystemID FROM posted_headers AS h INNER JOIN bronze_erp.billing_line AS l ON l.invoice_no = h.invoice_no AND l.instance_code = h.instance_code AND l.GDSBatchID = h.GDSBatchID LEFT JOIN meta.system AS sys ON sys.SystemCode = 'ERP' LEFT JOIN silver.Client AS c ON c.SourceClientNo = h.client_no AND c.InstanceCode = h.instance_code AND c.SourceSystemID = sys.SystemID ); SELECT SourceInvoiceNo, InstanceCode, LineNumber, ClientID, BilledAmount, SourceSystemID FROM temp_client_billing_erp;"
+      "generated_sql": "CREATE OR REPLACE TEMPORARY VIEW temp_client_billing_erp AS ( WITH posted_headers AS ( SELECT h.invoice_no, h.instance_code, h.client_no, h.GDSBatchID FROM bronze_erp.billing_header AS h WHERE h.status = 'POSTED' AND h.GDSBatchID = 'wid_gdsbatchid' ) SELECT h.invoice_no AS SourceInvoiceNo, h.instance_code AS InstanceCode, l.line_no AS LineNumber, c.ClientID AS ClientID, CAST(l.quantity * l.unit_price AS DECIMAL(18, 2)) AS BilledAmount, sys.SystemID AS SourceSystemID FROM posted_headers AS h INNER JOIN bronze_erp.billing_line AS l ON l.invoice_no = h.invoice_no AND l.instance_code = h.instance_code AND l.GDSBatchID = h.GDSBatchID LEFT JOIN meta.system AS sys ON sys.SystemCode = 'ERP' LEFT JOIN silver.Client AS c ON c.SourceClientNo = h.client_no AND c.InstanceCode = h.instance_code AND c.SourceSystemID = sys.SystemID ); SELECT SourceInvoiceNo, InstanceCode, LineNumber, ClientID, BilledAmount, SourceSystemID FROM temp_client_billing_erp;"
     }
   ]
 }

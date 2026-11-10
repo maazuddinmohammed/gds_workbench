@@ -5,10 +5,16 @@ from __future__ import annotations
 # Disposable fixture helpers are shared intentionally.
 # pyright: reportPrivateUsage=false
 from collections.abc import Iterator
+from dataclasses import replace
 from typing import Any, cast
 
 import pytest
+from atlas_mcp.application.change_sets.project_apply import ProjectMaterializer
 from atlas_mcp.application.mapping_context import project_mapping_inputs
+from atlas_mcp.domain.modeling_records import MappingObjectRecord
+from atlas_platform.features.mapping import MappingPreparation, assess_mapping_readiness
+from atlas_platform.features.mapping.complete_candidate import CompleteMappingCandidateValidator
+from atlas_platform.features.mapping.preparation_contracts import MappingOutputTemplateSelection
 from atlas_platform.features.workflows.authoring.downstream_inputs import (
     downstream_input_contracts,
 )
@@ -18,14 +24,121 @@ from psycopg.types.json import Jsonb
 from tests.mcp.conftest import DisposablePostgres, disposable_postgres
 from tests.mcp.database_test_support import require_row
 from tests.mcp.test_database_mapping_output_template_seed import (
+    SEED,
     seed_mapping_output_templates,
 )
-from tests.web_backend.test_database_mapping_source_context import _seed_mapping_scope
+from tests.web_backend.test_database_mapping_source_context import _load, _seed_mapping_scope
 
 
 @pytest.fixture
 def template_context_database() -> Iterator[DisposablePostgres]:
     yield from disposable_postgres()
+
+
+async def test_protected_object_keeps_its_saved_template_through_apply(
+    template_context_database: DisposablePostgres,
+) -> None:
+    database = template_context_database
+    scope = _seed_mapping_scope(database, dimensional=False)
+    seed_mapping_output_templates(
+        database, seed_sql=SEED.read_text().replace("_object_default_v2", "_object_default")
+    )
+    seed_mapping_output_templates(database)
+    old_code = "mapping_logical_object_default"
+    new_code = "mapping_logical_object_default_v2"
+    saved_document = {"sample_query": "SELECT customer_id FROM bronze.customer"}
+    with database.connect_owner() as connection:
+        templates = {
+            row["output_template_code"]: row
+            for row in connection.execute(
+                "SELECT output_template_code, output_template_id, output_template_schema_digest "
+                "FROM application.output_template WHERE output_template_code IN (%s,%s)",
+                (old_code, new_code),
+            ).fetchall()
+        }
+        mapping = require_row(
+            connection.execute(
+                "UPDATE workflow.mapping_object SET output_template_id=%s, "
+                "mapping_transformation_document=%s, object_dependency_order=0 "
+                "WHERE project_id=%s AND logical_entity_id=%s RETURNING mapping_object_id",
+                (
+                    templates[old_code]["output_template_id"],
+                    Jsonb(saved_document),
+                    scope.plan.project_id,
+                    scope.logical_entity_id,
+                ),
+            ).fetchone()
+        )
+        connection.execute(
+            "UPDATE workflow.logical_entity SET logical_entity_dependency_order=2 "
+            "WHERE logical_entity_id=%s",
+            (scope.logical_entity_id,),
+        )
+    selection = MappingOutputTemplateSelection(
+        output_template_id=templates[new_code]["output_template_id"],
+        schema_digest=templates[new_code]["output_template_schema_digest"],
+    )
+    plan = scope.plan.model_copy(
+        update={
+            "selected_attribute_ids": (),
+            "output_template_selections": scope.plan.output_template_selections.model_copy(
+                update={"mapping_object": selection}
+            ),
+        }
+    )
+    context = await _load(database, replace(scope, plan=plan))
+    validator = CompleteMappingCandidateValidator(
+        preparation=MappingPreparation(
+            plan=plan,
+            context=context,
+            readiness=assess_mapping_readiness(plan=plan, context=context),
+        )
+    )
+    changes = validator.parse_validated(
+        {"schema_version": "1.0", "object_mapping": None, "attribute_mappings": []}
+    ).changes
+    assert len(changes) == 1 and changes[0].dataset == "mapping_object"
+    (row,) = changes[0].records
+    record = MappingObjectRecord.model_validate(row)
+    assert record.output_template_code == old_code and record.object_dependency_order == 2
+    assert record.mapping_transformation_document == saved_document
+
+    runtime = database.create_runtime_adapter()
+    await runtime.open()
+    try:
+        async with runtime.write_transaction() as transaction:
+            materializer = ProjectMaterializer.for_workflow_apply(
+                transaction=transaction,
+                project_id=plan.project_id,
+                source_context_digest="a" * 64,
+                workflow_run_id=plan.workflow_run_id,
+                project_workflow="mapping",
+                mapping_object_output_template_id=selection.output_template_id,
+                mapping_attribute_output_template_id=None,
+            )
+            assert await materializer.apply({"mapping_object": (record,)}) == 1
+            read_saved = (
+                "SELECT output_template_id, mapping_transformation_document, "
+                "object_dependency_order FROM workflow.mapping_object WHERE mapping_object_id=%s"
+            )
+            assert await transaction.fetch_one(read_saved, (mapping["mapping_object_id"],)) == {
+                "output_template_id": templates[old_code]["output_template_id"],
+                "mapping_transformation_document": saved_document,
+                "object_dependency_order": 2,
+            }
+            # An authored replacement still receives the frozen Run template.
+            replacement = record.model_copy(
+                update={
+                    "mapping_transformation_document": {
+                        "sample_query": "Read the supported customer rows."
+                    }
+                }
+            )
+            assert await materializer.apply({"mapping_object": (replacement,)}) == 1
+            saved = await transaction.fetch_one(read_saved, (mapping["mapping_object_id"],))
+            assert saved and saved["output_template_id"] == selection.output_template_id
+    finally:
+        await runtime.close()
 
 
 @pytest.mark.parametrize("dimensional", [False, True], ids=["logical", "dimensional"])
@@ -86,10 +199,14 @@ def test_applied_mapping_documents_keep_their_exact_template_semantics(
                     ).fetchone()
                 )
             else:
+                code = (
+                    f"mapping_{layer}_object_default_v2" if kind == "object"
+                    else f"mapping_{layer}_attribute_default"
+                )
                 template = require_row(
                     connection.execute(
                         "SELECT * FROM application.output_template WHERE output_template_code=%s",
-                        (f"mapping_{layer}_{kind}_default",),
+                        (code,),
                     ).fetchone()
                 )
             templates[kind] = template

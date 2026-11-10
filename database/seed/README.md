@@ -45,8 +45,10 @@ repository. Editing a source seed does not alter published database versions.
   Custom defaults/unrelated drafts are protected; frozen Runs keep their versions.
 - Seed 06: exact replay is a no-op. Conflicting immutable template definitions fail;
   custom selections and frozen IDs/digests stay intact. Install the four active defaults
-  for runs that omit a custom selection. Templates guide document fields, not business
-  truth or independent execution permission.
+  for runs that omit a custom selection. Logical and Dimensional Object defaults use
+  the `_default_v2` codes. Attribute defaults use the original `_default` codes.
+  Install the v2 templates before switching the new-run selector in file 13.
+  Templates guide document fields, not business truth or independent execution permission.
 
 The runtime variable/reader registry and these seeds must change together; see
 [workflow maintenance](../../docs/workflows.md). Deterministic stages do not use prompts.

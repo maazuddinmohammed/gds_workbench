@@ -23,7 +23,9 @@ SEED = (
 )
 
 
-def seed_mapping_output_templates(database: DisposablePostgres) -> None:
+def seed_mapping_output_templates(
+    database: DisposablePostgres, *, seed_sql: str | None = None
+) -> None:
     """Install the real seed under a fixture-created Super Admin identity."""
     with database.connect_owner() as connection:
         identity = connection.execute(
@@ -63,7 +65,7 @@ def seed_mapping_output_templates(database: DisposablePostgres) -> None:
                 identity["entra_object_id"],
             )
         seed = (
-            SEED.read_text()
+            (SEED.read_text() if seed_sql is None else seed_sql)
             .replace("__REPLACE_WITH_ENTRA_TENANT_ID__", str(tenant_id))
             .replace("__REPLACE_WITH_ENTRA_OBJECT_ID__", str(object_id))
             .replace("__REPLACE_WITH_PRINCIPAL_TYPE__", "user")
@@ -71,7 +73,9 @@ def seed_mapping_output_templates(database: DisposablePostgres) -> None:
         connection.execute(cast(LiteralString, seed))
 
 
-def _snapshot(database: DisposablePostgres) -> list[TestRow]:
+def _snapshot(
+    database: DisposablePostgres, *, object_suffix: str = "_v2"
+) -> list[TestRow]:
     with database.connect_owner() as connection:
         return connection.execute(
             """
@@ -82,11 +86,13 @@ def _snapshot(database: DisposablePostgres) -> list[TestRow]:
               FROM application.output_template AS template
               JOIN application.output_template_field AS field USING (output_template_id)
              WHERE output_template_code IN (
-                 'mapping_logical_object_default', 'mapping_logical_attribute_default',
-                 'mapping_dimensional_object_default', 'mapping_dimensional_attribute_default')
+                 'mapping_logical_object_default' || %s, 'mapping_logical_attribute_default',
+                 'mapping_dimensional_object_default' || %s,
+                 'mapping_dimensional_attribute_default')
              GROUP BY template.output_template_id
              ORDER BY template.output_template_code
-            """
+            """,
+            (object_suffix, object_suffix),
         ).fetchall()
 
 
@@ -145,22 +151,137 @@ def test_seed_requires_explicit_authorized_identity(
 
 def test_changed_seed_refuses_to_overwrite_existing_templates(
     bootstrap_postgres_database: DisposablePostgres,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     database = bootstrap_postgres_database
     seed_mapping_output_templates(database)
     before = _snapshot(database)
-    changed_seed = tmp_path / "changed_mapping_seed.sql"
-    changed_seed.write_text(
-        SEED.read_text().replace(
-            "Default Logical Object Mapping", "Changed Object Mapping"
+    changed_seed = SEED.read_text().replace(
+        "Logical Object Mapping v2", "Changed Object Mapping"
+    )
+    with pytest.raises(RaiseException, match="Output Template code conflict"):
+        seed_mapping_output_templates(database, seed_sql=changed_seed)
+    assert _snapshot(database) == before
+
+
+@pytest.mark.parametrize("dimensional", (False, True), ids=("logical", "dimensional"))
+def test_cutover_preserves_legacy_rows_and_retries(
+    bootstrap_postgres_database: DisposablePostgres,
+    dimensional: bool,
+) -> None:
+    from tests.mcp.test_database_mapping_workflow_run import (
+        CREATE_MAPPING_RUN_SQL,
+        _parameters,
+        _seed_mapping_context,
+    )
+
+    database = bootstrap_postgres_database
+    # Older installations can have different, immutable sample_query fields under v1.
+    legacy_seed = (
+        SEED.read_text()
+        .replace("_object_default_v2", "_object_default")
+        .replace("Logical Object Mapping v2", "Default Logical Object Mapping")
+        .replace("Dimensional Object Mapping v2", "Default Dimensional Object Mapping")
+        .replace(
+            "Describe the driving input, joins and shared steps. Put filters in filter_criteria "
+            "and each output value in its Attribute rule.",
+            "Pseudo-SQL illustrating supported source joins, predicates, filters and "
+            "transformations. Null when unavailable; do not invent missing rules.",
+        )
+        .replace(
+            "Start from bronze_crm.customer as c. Look up CRM in meta.system by SystemCode.",
+            "SELECT * FROM bronze_crm.customer WHERE is_active = true",
+        )
+        .replace(
+            "Start from silver.Customer, one row per customer.",
+            "SELECT * FROM silver.Customer WHERE is_active = true",
         )
     )
-    monkeypatch.setattr(f"{__name__}.SEED", changed_seed)
-    with pytest.raises(RaiseException, match="Output Template code conflict"):
-        seed_mapping_output_templates(database)
-    assert _snapshot(database) == before
+    seed_mapping_output_templates(database, seed_sql=legacy_seed)
+    legacy = _snapshot(database, object_suffix="")
+    context = _seed_mapping_context(database, dimensional=dimensional)
+    assert _snapshot(database, object_suffix="") == legacy
+    layer = "dimensional" if dimensional else "logical"
+    old_object = next(
+        row
+        for row in legacy
+        if row["output_template_code"] == f"mapping_{layer}_object_default"
+    )
+    new_object = next(
+        row
+        for row in _snapshot(database)
+        if row["output_template_code"] == f"mapping_{layer}_object_default_v2"
+    )
+    assert (
+        old_object["output_template_schema_digest"]
+        != new_object["output_template_schema_digest"]
+    )
+    with (
+        database.connect_owner() as connection,
+        connection.transaction(force_rollback=True),
+    ):
+        # Reproduce a run made by the preceding selector, with both dropdowns left at default.
+        selector: str = require_row(
+            connection.execute(
+                "SELECT pg_get_functiondef('application.create_workflow_run'::regproc) AS ddl"
+            ).fetchone()
+        )["ddl"]
+        assert selector.count("_object_default_v2") == 2
+        connection.execute(
+            cast(
+                LiteralString, selector.replace("_object_default_v2", "_object_default")
+            )
+        )
+        parameters = _parameters(context, correlation_id=uuid4())
+        original = require_row(
+            connection.execute(CREATE_MAPPING_RUN_SQL, parameters).fetchone()
+        )
+        connection.execute(cast(LiteralString, selector))
+        retry = require_row(
+            connection.execute(CREATE_MAPPING_RUN_SQL, parameters).fetchone()
+        )
+        assert (
+            retry["workflow_run_id"] == original["workflow_run_id"]
+            and retry["created"] is False
+        )
+        new_default = require_row(
+            connection.execute(
+                CREATE_MAPPING_RUN_SQL,
+                _parameters(context, correlation_id=uuid4()),
+            ).fetchone()
+        )
+        explicit_old = require_row(
+            connection.execute(
+                CREATE_MAPPING_RUN_SQL,
+                _parameters(
+                    context,
+                    correlation_id=uuid4(),
+                    object_template_id=old_object["output_template_id"],
+                ),
+            ).fetchone()
+        )
+        for run, expected in (
+            (retry, old_object),
+            (new_default, new_object),
+            (explicit_old, old_object),
+        ):
+            frozen = require_row(
+                connection.execute(
+                    """
+                    SELECT mapping_object_output_template_id,
+                           mapping_object_output_template_schema_digest
+                      FROM application.workflow_run WHERE workflow_run_id = %s
+                    """,
+                    (run["workflow_run_id"],),
+                ).fetchone()
+            )
+            assert (
+                frozen["mapping_object_output_template_id"]
+                == expected["output_template_id"]
+            )
+            assert (
+                frozen["mapping_object_output_template_schema_digest"]
+                == expected["output_template_schema_digest"]
+            )
 
 
 @pytest.mark.parametrize("dimensional", (False, True), ids=("logical", "dimensional"))
@@ -265,7 +386,11 @@ def test_replay_keeps_frozen_defaults_when_current_default_is_unavailable(
             UPDATE application.output_template SET is_active = FALSE
              WHERE output_template_code = %s
             """,
-            (f"mapping_logical_{target.lower()}_default",),
+            (
+                "mapping_logical_object_default_v2"
+                if target == "Object"
+                else "mapping_logical_attribute_default",
+            ),
         )
         replay = require_row(
             connection.execute(CREATE_MAPPING_RUN_SQL, parameters).fetchone()
@@ -341,5 +466,5 @@ def test_template_layer_is_immutable(
         connection.execute(
             "UPDATE application.output_template SET output_template_modeled_entity_type = %s "
             "WHERE output_template_code = %s",
-            ("dimensional_entity", "mapping_logical_object_default"),
+            ("dimensional_entity", "mapping_logical_object_default_v2"),
         )

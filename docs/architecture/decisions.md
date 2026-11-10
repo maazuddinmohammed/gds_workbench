@@ -259,7 +259,7 @@ nullability follows business meaning. SourceSystemID has one value per System, n
 instance, so an Entity that mixes instances of one System keeps an instance Attribute in
 its natural key. Build records the current orchestration batch for a batched driving input, using
 its registered batch column; Bronze helpers from that load align batches in the join.
-A Project population rule can specify a different slice or staged reduction. Parent
+Project business predicates and reductions operate within the supplied batch. Parent
 Silver/Gold lookups remain eligible across earlier batches. Mapping never substitutes
 an arbitrary latest-per-key reduction for that load contract. Optimize shows the Entities whose foreign keys
 point at a name-variant Entity in full, so a merge can rename those foreign keys.
@@ -354,9 +354,11 @@ Model projection raises child dependency orders above their parents, including s
 dependents of a changed Entity; higher intentional orders and locks remain protected.
 Mapping readiness uses the active relationship graph and saved orders as lower bounds,
 and reconciliation persists the required order. Regenerate all affected parent and
-child Mappings together: unselected saved Mappings are not rewritten. A self-reference
-or cycle in the target's ancestry blocks Mapping until its loading strategy is resolved;
-unrelated cycles do not block it. Ordering alone cannot provide a second load pass.
+child Mappings together. A self-reference or multi-Entity cycle raises a review warning.
+For the initial Mapping, defer foreign keys on the relationships inside the cycle and
+retain their saved rules. Edges entering or leaving the cycle still establish order.
+Code Generation can emit typed NULLs for unresolved fields. Completing a later load
+pass belongs to external orchestration.
 
 Code storage is independent of artifact format: `table` requires inline content;
 `git` may omit it. Repository, commit/path and entry point are nullable unrestricted
@@ -372,7 +374,7 @@ Resolve SystemID in the execution environment with a LEFT JOIN to meta.system on
 SystemCode alone. Use the parent's own code for an explicit foreign-System lookup.
 
 SQL uses schema.table references and unqualified temporary views. Compare a Bronze
-driver's registered batch column to the quoted token `'WID_GDSBatchID'`. Join batched
+driver's registered batch column to the quoted token `'wid_gdsbatchid'`. Join batched
 Bronze inputs on their registered batch columns as well as their business keys.
 An input without a registered batch column has no batch condition. Silver/Gold parent
 lookups use the modeled keys and version rules, independent of the Bronze load.

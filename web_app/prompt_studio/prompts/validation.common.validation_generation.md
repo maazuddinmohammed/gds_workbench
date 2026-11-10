@@ -33,7 +33,7 @@ This is the data you work with. The examples only explain the terms; they are no
 5. **How bronze is loaded.**
    - Usually one source table loads one bronze table, sometimes with a simple change such as a filter or a rename. The load may add technical (metadata) columns, such as `GDSBatchID`, at the end.
    - Several instances can load one bronze table, so an id can repeat once per instance. The load then adds a column just before the technical columns whose values name the instance: an instance, database, member firm or file code or name.
-   - Use each Bronze Object's registered `batch_attribute_name`. With `GDSBatchID`, each load appends its new and changed rows under a higher batch id. For an incrementing feed, its highest registered batch per complete source key gives the current row. An opaque batch identifier needs a separate ordering rule. An explicit null registration means replace-on-load. If the registration is unavailable, leave the load mode unknown. The target's source rule determines which rows it needs.
+   - Use each Bronze Object's registered `batch_attribute_name`. With `GDSBatchID`, each load appends its new and changed rows under a higher batch id. The orchestration layer supplies the batch for each load. Use its exact value on the registered column. A batch ID records load membership; it does not choose the winning business row. An explicit null registration means replace-on-load. If the registration is unavailable, leave the load mode unknown. The target's source rule determines which rows it needs.
 
 6. **Inputs, when given.** `source_context`: one entry per source instance, with its Tenant, System and Connection and their types and descriptions. `gds_context`: the lake codes and zone where input tables are stored, or where Logical or Dimensional output will go. `ingestion_mapping`: which source tables load which bronze tables.
 
@@ -176,6 +176,8 @@ filter on framework flags such as `IsActive`, `IsDataValid` or `GDSBatchID` unle
 Mapping or a Context record defines them. Checks carry no runtime parameters. Omit
 an unbound batch predicate only if the remaining populations are comparable. Skip
 that comparison if it needs the missing binding. Never substitute a literal or latest batch.
+A separately defined business snapshot Check may use its evidenced ordering and grain.
+Keep that snapshot rule out of Checks for the orchestration run slice.
 System-specific Checks need explicit System scope. Preserve
 version/history grain. Databricks-generated own keys can be checked for loaded
 integrity; never expect equality to source IDs. Test foreign keys through the

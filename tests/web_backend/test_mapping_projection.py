@@ -112,7 +112,7 @@ async def test_projection_keeps_foreign_parent_namespace_placeholders_for_code()
         "SELECT <mapped_columns> FROM bronze.customer c "
         "LEFT JOIN silver.Parent p ON p.SourceID = c.parent_id "
         "AND p.SourceSystemID = CAST(<REFERENCE System ID> AS BIGINT) "
-        "WHERE c.GDSBatchID = wid_GDSBatchID"
+        "WHERE c.GDSBatchID = 'wid_gdsbatchid'"
     )
     answer = _answer(query, {"CustomerID": "p.ParentID"})
     assert not (await validator.validate(answer)).issues
@@ -164,7 +164,7 @@ async def test_expanded_projection_uses_existing_document_byte_limit() -> None:
     assert outcome.issues
 
 
-@pytest.mark.parametrize("template", ["standard", "edited_fields", "custom", "legacy"])
+@pytest.mark.parametrize("template", ["v1", "v2", "edited_fields", "custom", "legacy"])
 async def test_only_selected_layer_defaults_enable_projection(template: str) -> None:
     prep = mapping_preparation()
     data = prep.model_dump(mode="json")
@@ -172,6 +172,8 @@ async def test_only_selected_layer_defaults_enable_projection(template: str) -> 
     contracts = downstream_input_contracts("mapping")
     for index, kind in enumerate(("object", "attribute"), start=1):
         definition: dict[str, Any] = dict(contracts[f"{kind}_output_template"][2])
+        if kind == "object" and template == "v1":
+            definition["code"] = "mapping_logical_object_default"
         if kind == "attribute":
             if template == "custom":
                 definition["code"] = "custom_attribute"
@@ -191,12 +193,12 @@ async def test_only_selected_layer_defaults_enable_projection(template: str) -> 
     validator = CompleteMappingCandidateValidator(preparation=prep)
     shorthand = "SELECT <mapped_columns> FROM bronze.customer"
     description = str(validator.output_schema()["description"])
-    assert ("In sample_query describe the driver" in description) == (template == "standard")
+    assert ("In sample_query describe the driver" in description) == (template in {"v1", "v2"})
     result = validator.parse_validated(_answer(shorthand, {"CustomerID": "id"}))
     obj = result.normalized.object_mapping
     assert obj and obj.mapping_transformation_document
     assert obj.mapping_transformation_document["sample_query"] == (
-        "SELECT id AS `CustomerID` FROM bronze.customer" if template == "standard" else shorthand
+        "SELECT id AS `CustomerID` FROM bronze.customer" if template == "v1" else shorthand
     )
 
 

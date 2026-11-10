@@ -453,17 +453,27 @@ RETURNING mapping_object_id
 """
 
 _UPDATE_MAPPING_OBJECT_SQL: LiteralString = """
-UPDATE workflow.mapping_object
-   SET output_template_id = %s,
+UPDATE workflow.mapping_object AS saved
+   SET output_template_id = CASE
+           -- An order or lifecycle change can retain protected, previously authored logic.
+           WHEN saved.mapping_transformation_document = incoming.document
+            AND incoming.template_code IS NOT DISTINCT FROM (
+                SELECT template.output_template_code FROM application.output_template AS template
+                 WHERE template.output_template_id = saved.output_template_id
+            ) THEN saved.output_template_id
+           ELSE incoming.output_template_id
+       END,
        object_dependency_order = %s,
-       mapping_transformation_document = %s,
+       mapping_transformation_document = incoming.document,
        agent_run_id = NULL,
        workflow_run_id = %s,
        object_mapping_status = %s,
        object_mapping_is_locked = %s,
        updated_time = CURRENT_TIMESTAMP,
        updated_by = CURRENT_USER
- WHERE mapping_object_id = %s
+  FROM (VALUES (%s::BIGINT, %s::JSONB, %s::TEXT))
+       AS incoming(output_template_id, document, template_code)
+ WHERE saved.mapping_object_id = %s
 RETURNING mapping_object_id
 """
 
@@ -2284,12 +2294,13 @@ SELECT attribute.{config.attribute_id}
             row = await self.transaction.fetch_one(
                 _UPDATE_MAPPING_OBJECT_SQL,
                 (
-                    output_template_id,
                     record.object_dependency_order,
-                    transformation,
                     mapping_workflow_run_id,
                     record.object_mapping_status,
                     record.object_mapping_is_locked,
+                    output_template_id,
+                    transformation,
+                    record.output_template_code,
                     existing["mapping_object_id"],
                 ),
             )

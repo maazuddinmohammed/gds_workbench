@@ -27,14 +27,16 @@ Evidence arrives as cards with a `kind` and a `record`:
 Choose a driver at the target grain. For a standard Object document:
 
 1. In `source_tables`, list each used eligible input once. For physical tables copy tenant_code, system_code, connection_code, object_schema and object_name. For modeled inputs copy entity_type, entity_schema_name and entity_name.
-2. In `sample_query`, start with FROM and give the driver, aliases, join types and conditions. For any shared preparation, name its inputs, the keys that define one output row, and the result that field rules can use. Omit SELECT, output projections and field formulas. Keep distinct parent roles on separate aliases. Format multi-join plans across lines: place the driving FROM and each JOIN on their own lines, with ON and additional AND predicates indented underneath. Describe shared preparation steps separately.
-3. In `filter_criteria`, give each row filter and the input or step where it applies. Use null when none applies. Filter a Bronze driver with a registered batch column to `'WID_GDSBatchID'`. When two same-load Bronze inputs have registered batch columns, also join on their batch columns. An input without a registered batch column has no batch predicate. A Silver parent can come from an earlier batch.
+2. Start `sample_query` with `-- Join plan`. Put the driving FROM and each JOIN on separate lines, with ON and each additional AND indented underneath. Show aliases, join types and every match condition. Give distinct parent roles separate aliases. When several fields depend on a shared row operation, or the source grain must change, add a blank line and `-- Object-level transformations`. In short pseudocode, name each step, its inputs, how it changes the rows, the output grain and any result used by the joins or fields. Omit this section when there are no shared steps. Keep the target SELECT list and individual field formulas in the Attribute rules.
+3. In `filter_criteria`, record each row filter and the input or step where it applies. Use null when none applies. For a run-batched driver, compare its registered `batch_attribute_name` to the exact quoted loader token, e.g. `m.gds_batch_id = 'wid_gdsbatchid'`. When batch is the only filter, write that equality alone. Ignore “highest batch” or “latest per key” wording in source descriptions, lineage, rationale or saved rules when authoring the run slice. Never add MAX, ranking, deduplication or a latest-batch subquery to select that batch. Preserve independently supported business filters, grouping and version rules. Join same-load Bronze inputs on their business keys and registered batch columns. An input without a registered batch column has no batch predicate. A Silver parent can come from an earlier batch.
 
 Before writing a business filter in a row rule, join or field calculation, find evidence for how **that source column stores the requested meaning**. Use the exact value, type and case from a code list, column description, scoped requirement or applicable saved rule. For example, “approved invoices” describes a requirement; “approval_flag stores integer 1 for approved” supports `approval_flag = 1`. A label, a column name, an unexplained profiled value or another System’s example cannot supply the encoding. Do not guess or add case folding to make a guess match.
 
 If the encoding is missing or conflicting, omit each affected field rule and report `missing_transformation_rule` for that field. Keep independently supported fields and row logic. Omit steps used only by unresolved fields. Apply an empty-result default only when the filter itself is known. If the filter determines which rows the whole target receives, withhold the unsupported Object rule and report the issue at table level.
 
 For a Gold branch reading a Silver driver shared by several Systems, record how to select this System’s rows before joining or aggregating them. For example, when `silver.Customer AS c` carries its owning `SourceSystemID`, look up the branch code in `meta.system AS sys` and put `c.SourceSystemID = sys.SystemID` in `filter_criteria`. Projecting `sys.SystemID` alone labels every row. If the model gives another ownership key, use its evidenced rule; if you cannot distinguish the Systems, report the missing row rule.
+
+A field marked `defer_lookup: true` depends on a circular lookup. Omit that field and any new join used only for it. Keep its saved rule if present; otherwise report `missing_join_evidence` for the selected field. Continue mapping the driver and independent fields.
 
 For each FK, trace the child's operand and the parent's full natural key, transformations and System. Match every component, including source instance where IDs repeat across instances. For a Logical target, Atlas has already matched each eligible physical Source/Bronze input to this branch's originating System. When the parent's natural-key lineage points to one of those inputs and the modeled relationship uses that key, match the parent on this branch's SystemID. This works before the parent has a saved Mapping. An explicit foreign-System relationship uses that System's code. A parent table name or a Bronze storage System alone cannot establish the namespace. A bridge requires evidence on both legs. Return the parent's modeled key. Preserve optional rows with a left join. Apply version or as-of conditions only when supported.
 
@@ -48,15 +50,19 @@ Use schema_version `"1.0"`. For a supported contribution, use outcome `mapped`. 
 
 ## [S5] Worked example
 
-A Logical run maps ERP orders into silver.Order at one row per order. The Object and two fields, CustomerID and SourceSystemID, have action author. Dependency order is 2. Bronze orders are stored under tenant T, System GDS, Connection lake. Its registered batch column is LoadID. CustomerID is nullable. Its child lineage points to bronze.orders.cust_no. The FK role returns silver.Customer.CustomerID. The applied parent Mapping says CustomerNo is its sole natural key, populated without conversion in the same ERP namespace. There is one instance. The shared join plan in `sample_query` reads:
+A Logical run maps ERP order lines into silver.Order. The Object and three fields, CustomerID, OrderAmount and SourceSystemID, have action author. Dependency order is 2. The Bronze order_line table is stored under tenant T, System GDS, Connection lake. Its registered batch column is gds_batch_id. The run needs one row per order and the sum of its line amounts. Each order has one customer number within the batch. CustomerID is nullable. The child lineage points to bronze.order_line.cust_no. The FK role returns silver.Customer.CustomerID. The applied parent Mapping says CustomerNo is its sole natural key, populated without conversion in the same ERP namespace. There is one instance. The shared plan in `sample_query` reads:
 
 ```sql
-FROM bronze.orders AS o
+-- Join plan
+FROM order_totals AS o
 LEFT JOIN meta.system AS sys
     ON sys.SystemCode = 'ERP'
 LEFT JOIN silver.Customer AS c
     ON c.CustomerNo = o.cust_no
     AND c.SourceSystemID = sys.SystemID
+
+-- Object-level transformations
+order_totals: read bronze.order_line AS m using filter_criteria. Group by m.order_no and m.cust_no to produce one row per order. Sum m.line_amount as order_amount.
 ```
 
 Return the plan as one multiline string in the candidate JSON:
@@ -70,11 +76,11 @@ Return the plan as one multiline string in the candidate JSON:
     "object_dependency_order": 2,
     "mapping_transformation_document": {
       "source_tables": [
-        {"tenant_code":"T","system_code":"GDS","connection_code":"lake","object_schema":"bronze","object_name":"orders"},
+        {"tenant_code":"T","system_code":"GDS","connection_code":"lake","object_schema":"bronze","object_name":"order_line"},
         {"entity_type":"logical_entity","entity_schema_name":"silver","entity_name":"Customer"}
       ],
-      "sample_query": "FROM bronze.orders AS o\nLEFT JOIN meta.system AS sys\n    ON sys.SystemCode = 'ERP'\nLEFT JOIN silver.Customer AS c\n    ON c.CustomerNo = o.cust_no\n    AND c.SourceSystemID = sys.SystemID",
-      "filter_criteria": "o.LoadID = 'WID_GDSBatchID'"
+      "sample_query": "-- Join plan\nFROM order_totals AS o\nLEFT JOIN meta.system AS sys\n    ON sys.SystemCode = 'ERP'\nLEFT JOIN silver.Customer AS c\n    ON c.CustomerNo = o.cust_no\n    AND c.SourceSystemID = sys.SystemID\n\n-- Object-level transformations\norder_totals: read bronze.order_line AS m using filter_criteria. Group by m.order_no and m.cust_no to produce one row per order. Sum m.line_amount as order_amount.",
+      "filter_criteria": "m.gds_batch_id = 'wid_gdsbatchid'"
     }
   },
   "attribute_mappings": [
@@ -82,10 +88,20 @@ Return the plan as one multiline string in the candidate JSON:
       "modeled_attribute_name": "CustomerID",
       "attribute_mapping_transformation_document": {
         "source_columns": [
-          {"tenant_code":"T","system_code":"GDS","connection_code":"lake","object_schema":"bronze","object_name":"orders","attribute_name":"cust_no"},
+          {"tenant_code":"T","system_code":"GDS","connection_code":"lake","object_schema":"bronze","object_name":"order_line","attribute_name":"cust_no"},
           {"entity_type":"logical_entity","entity_schema_name":"silver","entity_name":"Customer","attribute_name":"CustomerID"}
         ],
         "transformation_logic": "c.CustomerID",
+        "default_record": null
+      }
+    },
+    {
+      "modeled_attribute_name": "OrderAmount",
+      "attribute_mapping_transformation_document": {
+        "source_columns": [
+          {"tenant_code":"T","system_code":"GDS","connection_code":"lake","object_schema":"bronze","object_name":"order_line","attribute_name":"line_amount"}
+        ],
+        "transformation_logic": "o.order_amount",
         "default_record": null
       }
     },

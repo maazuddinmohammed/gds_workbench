@@ -41,7 +41,7 @@ def compile_mapping_output_schema(
         guidance["attribute_mapping_transformation_document"] = _template_guidance(
             attribute_template
         )
-    if supports_projection_shorthand(preparation):
+    if uses_standard_mapping_templates(preparation, include_v2=True):
         description += (
             " In sample_query describe the driver, joins and shared steps. Put row filters "
             "in filter_criteria and each column's value in its own transformation_logic."
@@ -52,7 +52,7 @@ def compile_mapping_output_schema(
     return schema
 
 
-def supports_projection_shorthand(preparation: MappingPreparation) -> bool:
+def uses_standard_mapping_templates(preparation: MappingPreparation, *, include_v2: bool) -> bool:
     """Both selected templates must use the standard layer-specific field contracts."""
     layer = preparation.plan.modeled_entity_type.removesuffix("_entity")
     selections = preparation.plan.output_template_selections
@@ -75,9 +75,11 @@ def supports_projection_shorthand(preparation: MappingPreparation) -> bool:
         if selection is None:
             continue
         template = _selected_template(preparation, f"mapping_{kind}")
+        code = f"mapping_{layer}_{kind}_default"
+        codes = (code, f"{code}_v2") if include_v2 and kind == "object" else (code,)
         if (
             template is None
-            or template.code != f"mapping_{layer}_{kind}_default"
+            or template.code not in codes
             or template.modeled_entity_type != preparation.plan.modeled_entity_type
             or {field.name: field.data_type for field in template.fields} != expected
             or not all(

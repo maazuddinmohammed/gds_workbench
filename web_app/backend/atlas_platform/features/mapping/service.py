@@ -351,6 +351,11 @@ class MappingWorkflow:
                     pair_failed = True
                     pair_stage = "mapping.pair_failed"
                     pair_message = safe.message[:2000]
+                if preparation.readiness.warnings:
+                    pair_warning = warning = True
+                    pair_message = " ".join(
+                        (pair_message, *(item.message for item in preparation.readiness.warnings))
+                    )[:2000]
                 # Dependency order can differ from selection order. Keep the
                 # frozen selection ordinal so diagnostics identify the correct pair.
                 await self._lifecycle.append_event(
@@ -366,7 +371,7 @@ class MappingWorkflow:
                         message=pair_message,
                         current=preparation.plan.selection_ordinal,
                         total=len(preparations),
-                        finding_count=int(pair_failed),
+                        finding_count=int(pair_failed) + len(preparation.readiness.warnings),
                     ),
                 )
                 sequence += 1
@@ -383,6 +388,15 @@ class MappingWorkflow:
             changes = tuple(
                 StageProjectChange(dataset=dataset, records=records)
                 for dataset, records in combined_records.items()
+            )
+            cycle_pairs = sum(
+                any(item.code == "dependency.cycle" for item in prep.readiness.warnings)
+                for prep in preparations
+            )
+            cycle_summary = (
+                f" Dependency cycles affect {cycle_pairs} of the selected pairs."
+                if cycle_pairs
+                else ""
             )
             final_sequence = sequence
             if not changes:
@@ -401,7 +415,7 @@ class MappingWorkflow:
                     message=(
                         f"Mapping completed with no effective change; {unmatched} pairs "
                         f"had no applicable source, {empty} returned no output, "
-                        f"{partial} have partial mappings, {len(failures)} failed."
+                        f"{partial} have partial mappings, {len(failures)} failed.{cycle_summary}"
                     ),
                 )
 
@@ -424,8 +438,8 @@ class MappingWorkflow:
                     message=(
                         f"{completed} of {len(preparations)} Mapping targets assessed; "
                         f"{partial} have partial mappings; {empty} returned no output; "
-                        f"{unmatched} had no applicable source; {len(failures)} failed. "
-                        "Review the draft and run events."
+                        f"{unmatched} had no applicable source; {len(failures)} failed."
+                        f"{cycle_summary} Review the draft and run events."
                     ),
                     current=len(preparations),
                     total=len(preparations),

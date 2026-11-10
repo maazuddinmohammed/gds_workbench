@@ -162,7 +162,7 @@
             }
           ],
           "filter_criteria": "s.is_enabled = TRUE",
-          "sample_query": "FROM bronze_crm.users s LEFT JOIN meta.system sys ON sys.SystemCode = 'CRM'"
+          "sample_query": "-- Join plan\nFROM bronze_crm.users AS s\nLEFT JOIN meta.system AS sys\n    ON sys.SystemCode = 'CRM'"
         },
         "output_template_code": null,
         "source_system_code": "CRM"

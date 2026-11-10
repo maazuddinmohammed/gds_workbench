@@ -23,9 +23,10 @@ from atlas_platform.features.workflows.authoring.repair import (
 )
 
 from .contracts import MAX_MAPPING_OBJECT_BYTES, CompleteMappingCandidateV1, MappingObjectCandidate
-from .output_schema import compile_mapping_output_schema, supports_projection_shorthand
+from .output_schema import compile_mapping_output_schema, uses_standard_mapping_templates
 from .preparation_contracts import MappingPreparation
 from .reconciliation import MappingCandidateReconciler
+from .semantics import defer_circular_sources
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,7 +57,7 @@ def _materialize_sample_query(
         not isinstance(query, str)
         or marker not in query.lower()
         or document == preparation.context.headers[0].transformation_document
-        or not supports_projection_shorthand(preparation)
+        or not uses_standard_mapping_templates(preparation, include_v2=False)
     ):
         return candidate
 
@@ -177,8 +178,16 @@ class CompleteMappingCandidateValidator:
     def output_schema(self) -> dict[str, JsonValue]:
         return deepcopy(compile_mapping_output_schema(preparation=self._preparation))
 
-    def _parse(self, candidate: JsonValue) -> CompleteMappingCandidateV1:
+    def _reconcile(
+        self, candidate: JsonValue
+    ) -> tuple[CompleteMappingCandidateV1, tuple[StageProjectChange, ...]]:
         parsed = CompleteMappingCandidateV1.model_validate(candidate, strict=True)
+        parsed, retain_object, retain_fields = defer_circular_sources(self._preparation, parsed)
+        reconciler = MappingCandidateReconciler(
+            preparation=self._preparation,
+            retain_saved_object=retain_object,
+            retain_saved_attributes=frozenset(retain_fields),
+        )
         context = self._preparation.context
         technical, _ = effective_gold_templates(context.authoring.technical_columns_template, None)
         history = cast(dict[str, Any] | None, technical.get("type_2"))
@@ -225,20 +234,19 @@ class CompleteMappingCandidateValidator:
         )
         if only_framework and no_source_rowset:
             # Validate even the supplied records that the no-source normalization omits.
-            MappingCandidateReconciler(preparation=self._preparation).reconcile(candidate=parsed)
-            return parsed.model_copy(
+            reconciler.reconcile(candidate=parsed)
+            parsed = parsed.model_copy(
                 update={
                     "outcome": "no_applicable_source",
                     "object_mapping": None,
                     "attribute_mappings": (),
                 }
             )
-        return parsed
+        return parsed, reconciler.reconcile(candidate=parsed)
 
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
         try:
-            parsed = self._parse(candidate)
-            MappingCandidateReconciler(preparation=self._preparation).reconcile(candidate=parsed)
+            self._reconcile(candidate)
         except ValidationError as error:
             return AgentCandidateValidation(issues=pydantic_validation_issues(error))
         except (InvalidRequestError, ValueError) as error:
@@ -255,12 +263,9 @@ class CompleteMappingCandidateValidator:
 
     def parse_validated(self, candidate: JsonValue) -> CompleteMappingCandidateResult:
         try:
-            parsed = self._parse(candidate)
+            parsed, changes = self._reconcile(candidate)
         except ValidationError:
             raise InvalidRequestError("The Mapping candidate is invalid.") from None
-        changes = MappingCandidateReconciler(preparation=self._preparation).reconcile(
-            candidate=parsed
-        )
         header = self._preparation.context.headers[0]
         object_document = header.transformation_document
         attributes: dict[int, object] = {

@@ -592,7 +592,7 @@ describe("Mapping journey", () => {
     expect(screen.getByLabelText("Object Mapping Output Template")).toHaveValue("");
     expect(screen.getByLabelText("Attribute Mapping Output Template")).toHaveValue("");
     expect(screen.getAllByRole("option", { name: "Use global default" })).toHaveLength(2);
-    expect(screen.getByText("mapping_logical_object_default")).toBeVisible();
+    expect(screen.getByText("mapping_logical_object_default_v2")).toBeVisible();
     expect(screen.getByText("mapping_logical_attribute_default")).toBeVisible();
     expect(screen.getByRole("option", {
       name: "Standard Object Mapping · Schema valid",
@@ -779,7 +779,7 @@ describe("Mapping journey", () => {
     }
     expect(within(dialog).queryByLabelText("Layer")).not.toBeInTheDocument();
     const templateLayer = layer === "logical_entity" ? "logical" : "dimensional";
-    expect(within(dialog).getByText(`mapping_${templateLayer}_object_default`)).toBeVisible();
+    expect(within(dialog).getByText(`mapping_${templateLayer}_object_default_v2`)).toBeVisible();
     expect(within(dialog).getByText(`mapping_${templateLayer}_attribute_default`)).toBeVisible();
     expect(fetcher.mock.calls.some(([input]) => String(input).includes(`/output-templates?target_type=mapping_object&active=true&page_size=200&entity_type=${layer}`))).toBe(true);
     expect(fetcher.mock.calls.some(([input]) => String(input).includes(`/mapping/generation-targets?entity_type=${layer}`))).toBe(true);

@@ -9,7 +9,13 @@ from atlas_mcp.domain.authorization import RequestPrincipal, ToolPolicy
 from atlas_mcp.domain.errors import AuthorizationDeniedError
 from atlas_mcp.infrastructure.postgres import ReadIsolation
 
-from atlas_platform.features.workflows.authoring.dependency_order import resolve_dependency_orders
+from atlas_platform.features.workflows.authoring.context import (
+    AgentContextUnavailableError,
+    reject_forbidden_provider_json,
+)
+from atlas_platform.features.workflows.authoring.dependency_order import (
+    resolve_mapping_dependency_order,
+)
 from atlas_platform.features.workflows.execution.contracts import WorkflowExecutionDatabase
 
 from .preparation_contracts import (
@@ -149,8 +155,19 @@ def assess_mapping_readiness(
             if (
                 source.object.entity_type == target.entity_type
                 and source.object.entity_id == target.entity_id
+                and not (
+                    source.role == "lookup"
+                    and any(
+                        edge.successor_modeled_entity_id
+                        == edge.predecessor_modeled_entity_id
+                        == target.entity_id
+                        for edge in context.target_dependency_graph.edges
+                    )
+                )
             ):
-                issue("source.self_reference", "An Entity cannot be its own Mapping lookup.")
+                issue(
+                    "source.self_reference", "A self lookup requires an active self-relationship."
+                )
             available = source.object.status == "active" and bool(source.object.attributes)
         else:
             if plan.route != "logical_to_silver" or source.object.zone_code not in {
@@ -178,21 +195,21 @@ def assess_mapping_readiness(
     orders[target.entity_id] = max(
         orders.get(target.entity_id, 0), target.dependency_order, header.object_dependency_order
     )
-    resolved, blocked = resolve_dependency_orders(
+    required_order, deferred_edges, cycle = resolve_mapping_dependency_order(
         orders,
-        (
+        {
             (edge.successor_modeled_entity_id, edge.predecessor_modeled_entity_id)
             for edge in context.target_dependency_graph.edges
-        ),
-        targets={target.entity_id},
+        },
+        target.entity_id,
     )
-    required_order = resolved.get(target.entity_id, orders[target.entity_id])
-    if target.entity_id in blocked:
-        issue(
-            "dependency.unschedulable",
-            "A self-reference or dependency cycle needs an explicit loading strategy "
-            "before Mapping.",
-        )
+    deferred_attributes = {
+        name
+        for edge in context.target_dependency_graph.edges
+        if edge.successor_modeled_entity_id == target.entity_id
+        and (target.entity_id, edge.predecessor_modeled_entity_id) in deferred_edges
+        for name in edge.child_attribute_names
+    }
     if header.is_locked and header.object_dependency_order < required_order:
         issue(
             "dependency.locked_order",
@@ -243,6 +260,11 @@ def assess_mapping_readiness(
             header.is_locked
             or child.is_locked
             or (
+                modeled_attributes[modeled_id].attribute_name in deferred_attributes
+                and child.mapping_attribute_id is not None
+                and child.transformation_document is not None
+            )
+            or (
                 plan.selected_attribute_ids is not None
                 and child.modeled_attribute_id not in plan.selected_attribute_ids
             )
@@ -292,4 +314,67 @@ def assess_mapping_readiness(
         operation=plan.operation,
         headers=(readiness_header,),
         issues=tuple(issues),
+        warnings=(_cycle_warning(context, cycle, deferred_attributes),) if cycle else (),
+        deferred_dependency_attributes=tuple(sorted(deferred_attributes)),
+        deferred_dependency_parent_ids=tuple(
+            sorted(parent for child, parent in deferred_edges if child == target.entity_id)
+        ),
     )
+
+
+def _cycle_warning(
+    context: MappingRunContext, cycle: tuple[int, ...], deferred_attributes: set[str]
+) -> MappingReadinessIssue:
+    """Bound event text and show only safe modeled identifiers from the frozen Project."""
+    target = context.target
+    nodes = {node.modeled_entity_id: node for node in context.target_dependency_graph.nodes}
+
+    def safe_name(name: str) -> bool:
+        if not name.isprintable() or len(name) > 48:
+            return False
+        try:
+            reject_forbidden_provider_json(name, reject_sensitive_values=True)
+        except AgentContextUnavailableError:
+            return False
+        return True
+
+    def label(entity_id: int) -> str:
+        node = target if entity_id == target.entity_id else nodes[entity_id]
+        schema, name = node.entity_schema_name, node.entity_name
+        if (
+            schema
+            and name
+            and safe_name(schema)
+            and safe_name(name)
+            and safe_name(f"{schema}.{name}")
+        ):
+            return f"{schema}.{name}"
+        return "the selected Entity" if entity_id == target.entity_id else "an upstream Entity"
+
+    cycle_target = cycle[0]
+    labels = [label(entity_id) for entity_id in cycle[:3]]
+    if len(cycle) > 4:
+        labels.append(f"… ({len(cycle) - 4} more)")
+    if len(cycle) > 3:
+        labels.append(label(cycle[-1]))
+    path = " → ".join(labels)
+    if cycle_target != target.entity_id:
+        message = (
+            f"{label(target.entity_id)} depends on the upstream cycle {path}. "
+            "Its own fields remain eligible for Mapping. Resolve the parent keys in a later pass."
+        )
+    elif len(cycle) == 2:
+        message = f"{label(target.entity_id)} references itself. "
+    else:
+        message = f"Dependency cycle {path}. "
+    if cycle_target == target.entity_id:
+        fields = [
+            name if safe_name(name) else "a modeled field"
+            for name in sorted(deferred_attributes)[:3]
+        ]
+        listed = ", ".join(fields)
+        if len(deferred_attributes) > 3:
+            listed += f" and {len(deferred_attributes) - 3} more"
+        foreign_keys = f"foreign keys ({listed})" if listed else "circular foreign keys"
+        message += f"Map the base row first and resolve its {foreign_keys} in a later load pass."
+    return MappingReadinessIssue(code="dependency.cycle", message=message)

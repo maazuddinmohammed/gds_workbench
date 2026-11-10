@@ -85,7 +85,7 @@
     "source_evidence": [
       {
         "role": "support",
-        "rationale": "Dispatch feed supplies the driving instructions.",
+        "rationale": "Dispatch feed supplies the driving instructions. The highest batch per dispatch number gives its current source snapshot.",
         "is_locked": false,
         "object": {
           "tenant_code": "DEMO",
@@ -282,7 +282,7 @@
               "attribute_name": "load_batch",
               "attribute_data_type": "BIGINT",
               "attribute_description": "Feed batch number.",
-              "attribute_ordinal_position": 4,
+              "attribute_ordinal_position": 2,
               "attribute_nullability": false,
               "is_active": true,
               "attribute_inferred_data_type": null
@@ -1012,6 +1012,12 @@
               "aa",
               "bz",
               14
+            ],
+            [
+              "trip-1",
+              "bz",
+              "aa",
+              16
             ]
           ]
         },
@@ -1090,6 +1096,14 @@
               100,
               10,
               0
+            ],
+            [
+              "trip-1",
+              16,
+              "POSTED",
+              1,
+              500,
+              0
             ]
           ]
         },
@@ -1134,7 +1148,7 @@
         ]
       ],
       "replace": {
-        "'WID_GDSBatchID'": "15"
+        "'wid_gdsbatchid'": "15"
       }
     }
   }

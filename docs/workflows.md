@@ -102,7 +102,10 @@ provenance and distinguish unknown, absent, zero, failed and contradictory state
 
 ## Mapping and Code
 
-Default Object templates carry sources, filter criteria and a sample query;
+The Object's `filter_criteria` records predicates. For a registered batched driver,
+write `alias.<registered_column> = 'wid_gdsbatchid'`. The orchestrator supplies the value,
+including for replays. In `sample_query`, `-- Join plan` introduces the FROM and joins;
+an optional `-- Object-level transformations` section describes shared preparation.
 Attribute templates carry source columns, transformation logic and default-record
 instructions. Exact definitions live in seed 06. Saved inactive/custom template
 definitions still travel with documents that reference them. No template field or

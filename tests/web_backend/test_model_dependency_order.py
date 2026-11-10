@@ -16,7 +16,10 @@ from atlas_platform.features.dimensional.policy import (
 from atlas_platform.features.logical.policy import project_logical_audit_policy
 from atlas_platform.features.mapping import assess_mapping_readiness
 from atlas_platform.features.mapping.complete_candidate import CompleteMappingCandidateValidator
-from atlas_platform.features.mapping.preparation_contracts import MappingTargetDependencyGraph
+from atlas_platform.features.mapping.preparation_contracts import (
+    MappingTargetDependencyGraph,
+    ModeledEntityType,
+)
 from atlas_platform.features.workflows.authoring.dependency_order import resolve_dependency_orders
 from pydantic import JsonValue
 
@@ -241,27 +244,166 @@ async def test_mapping_cannot_raise_parent_order_past_frozen_child(saved_parent_
     assert parent_order < graph["nodes"][1]["dependency_order"]
 
 
-@pytest.mark.parametrize("cycle", [False, True])
-def test_mapping_reports_affected_self_or_cycle_dependency(cycle: bool) -> None:
-    preparation = mapping_preparation()
-    graph = preparation.context.target_dependency_graph.model_dump(mode="json")
-    if cycle:
-        graph["nodes"].append({**graph["nodes"][0], "modeled_entity_id": 202})
-        graph["edges"] = [
-            {"predecessor_modeled_entity_id": 201, "successor_modeled_entity_id": 202},
-            {"predecessor_modeled_entity_id": 202, "successor_modeled_entity_id": 201},
-        ]
-    else:
-        graph["edges"] = [
-            {"predecessor_modeled_entity_id": 201, "successor_modeled_entity_id": 201}
-        ]
-    context = preparation.context.model_copy(
-        update={
-            "target_dependency_graph": MappingTargetDependencyGraph.model_validate(
-                graph, strict=False
-            )
+@pytest.mark.parametrize("modeled_entity_type", ["logical_entity", "dimensional_entity"])
+@pytest.mark.parametrize(
+    ("edges", "expected_order", "deferred", "cycle_names"),
+    [
+        ([(201, 201, "CustomerID1")], 0, ("CustomerID1",), ("Customer",)),
+        (
+            [
+                (201, 202, "CustomerID1"),
+                (201, 202, "CustomerID2"),
+                (202, 201, "ParentID"),
+                (201, 204, "IndependentID"),
+            ],
+            5,
+            ("CustomerID1", "CustomerID2"),
+            ("Customer", "Parent", "Customer"),
+        ),
+        (
+            [
+                (201, 202, "CustomerID1"),
+                (202, 203, "RootID"),
+                (203, 202, "ParentID"),
+                (202, 204, "IndependentID"),
+            ],
+            6,
+            (),
+            ("Parent", "Root", "Parent"),
+        ),
+        ([(201, 204, "CustomerID1"), (202, 202, "ParentID")], 5, (), ()),
+    ],
+)
+def test_mapping_defers_only_foreign_keys_inside_a_cycle(
+    modeled_entity_type: ModeledEntityType,
+    edges: list[tuple[int, int, str]],
+    expected_order: int,
+    deferred: tuple[str, ...],
+    cycle_names: tuple[str, ...],
+) -> None:
+    preparation = mapping_preparation(modeled_entity_type=modeled_entity_type, attribute_count=2)
+    schema = preparation.context.target.entity_schema_name
+    original = preparation.context.target_dependency_graph.model_dump(mode="json")
+    nodes = [
+        {
+            **original["nodes"][0],
+            "modeled_entity_id": key,
+            "entity_schema_name": schema,
+            "entity_name": name,
+            "dependency_order": 4 if key == 204 else 0,
         }
+        for key, name in ((201, "Customer"), (202, "Parent"), (203, "Root"), (204, "Independent"))
+    ]
+    graph = MappingTargetDependencyGraph.model_validate(
+        {
+            **original,
+            "nodes": nodes,
+            "edges": [
+                {
+                    "successor_modeled_entity_id": child,
+                    "predecessor_modeled_entity_id": parent,
+                    "child_attribute_names": [name],
+                }
+                for child, parent, name in reversed(edges)
+            ],
+        },
+        strict=False,
+    )
+    context = preparation.context.model_copy(update={"target_dependency_graph": graph})
+    readiness = assess_mapping_readiness(plan=preparation.plan, context=context)
+    assert readiness.ready
+    assert readiness.issues == ()
+    assert readiness.headers[0].required_dependency_order == expected_order
+    assert readiness.deferred_dependency_attributes == deferred
+    if cycle_names:
+        (warning,) = readiness.warnings
+        assert warning.code == "dependency.cycle"
+        assert f"{schema}.Customer" in warning.message
+        assert " → ".join(f"{schema}.{name}" for name in cycle_names) in warning.message
+        if deferred:
+            assert ", ".join(deferred) in warning.message
+        else:
+            assert "Its own fields remain eligible" in warning.message
+    else:
+        assert readiness.warnings == ()
+    # Labels and per-relationship bookkeeping stay out of the agent's graph.
+    projected = graph.model_dump(mode="json")
+    assert "entity_name" not in projected["nodes"][0]
+    assert "child_attribute_names" not in projected["edges"][0]
+
+
+@pytest.mark.parametrize("locked", [False, True])
+def test_cycle_preserves_saved_rules_orders_and_lock_fences(locked: bool) -> None:
+    preparation = mapping_preparation(existing=True, locked=locked)
+    original = preparation.context.target_dependency_graph.model_dump(mode="json")
+    graph = MappingTargetDependencyGraph.model_validate(
+        {
+            **original,
+            "nodes": [
+                original["nodes"][0],
+                {**original["nodes"][0], "modeled_entity_id": 202, "dependency_order": 8},
+            ],
+            "edges": [
+                {
+                    "successor_modeled_entity_id": 201,
+                    "predecessor_modeled_entity_id": 201,
+                    "child_attribute_names": ["CustomerID"],
+                },
+                {
+                    "successor_modeled_entity_id": 201,
+                    "predecessor_modeled_entity_id": 202,
+                    "child_attribute_names": ["OtherID"],
+                },
+            ],
+        },
+        strict=False,
+    )
+    header = preparation.context.headers[0].model_copy(update={"object_dependency_order": 6})
+    context = preparation.context.model_copy(
+        update={"target_dependency_graph": graph, "headers": (header,)}
     )
     readiness = assess_mapping_readiness(plan=preparation.plan, context=context)
-    assert not readiness.ready
-    assert "dependency.unschedulable" in {issue.code for issue in readiness.issues}
+    assert readiness.ready is (not locked)
+    assert {item.code for item in readiness.issues} == (
+        {"dependency.locked_order"} if locked else set()
+    )
+    assert readiness.headers[0].required_dependency_order == 9
+    assert readiness.headers[0].attribute_actions[0].action == "preserve"
+    assert readiness.deferred_dependency_attributes == ("CustomerID",)
+
+
+def test_large_upstream_cycle_keeps_diagnostic_safe_and_bounded() -> None:
+    preparation = mapping_preparation()
+    original = preparation.context.target_dependency_graph.model_dump(mode="json")
+    upstream = range(202, 2202)
+    graph = MappingTargetDependencyGraph.model_validate(
+        {
+            **original,
+            "nodes": [
+                {
+                    **original["nodes"][0],
+                    "modeled_entity_id": node,
+                    "entity_schema_name": "silver",
+                    "entity_name": "unsafe\nname" if node == upstream.start else f"Parent{node}",
+                }
+                for node in range(201, upstream.stop)
+            ],
+            "edges": [
+                {
+                    "successor_modeled_entity_id": node,
+                    "predecessor_modeled_entity_id": (
+                        node + 1 if node < upstream[-1] else upstream.start
+                    ),
+                }
+                for node in range(201, upstream.stop)
+            ],
+        },
+        strict=False,
+    )
+    context = preparation.context.model_copy(update={"target_dependency_graph": graph})
+    readiness = assess_mapping_readiness(plan=preparation.plan, context=context)
+    assert readiness.ready and readiness.deferred_dependency_attributes == ()
+    (warning,) = readiness.warnings
+    assert warning.message.isprintable() and len(warning.message) <= 500
+    assert "silver.Customer" in warning.message and "unsafe" not in warning.message
+    assert "1997 more" in warning.message

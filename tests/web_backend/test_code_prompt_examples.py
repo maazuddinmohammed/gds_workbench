@@ -231,9 +231,9 @@ def test_role_lookup_example_executes_with_batch_and_complete_parent_key() -> No
     # Exercise the maintained prompt example through the supplied runner's exact
     # substitution contract. All data and SQLite schemas live only in memory.
     sql = SQL_EXAMPLES[1]
-    assert "'WID_GDSBatchID'" in sql
+    assert "'wid_gdsbatchid'" in sql
     statements = parse(
-        sql.replace("WID_GDSBatchID", "42"),
+        sql.replace("wid_gdsbatchid", "42"),
         read="databricks",
         error_level=ErrorLevel.RAISE,
     )
@@ -460,9 +460,11 @@ async def test_embedded_code_examples_deliver_the_mapped_rows_at_runtime() -> No
     ]
     layout = inputs["artifact_requirements"]
     target = inputs["target_metadata"]
-    assert object_document["sample_query"].startswith("FROM ")
+    plan, steps = object_document["sample_query"].split("\n\n-- Object-level transformations\n")
+    assert plan.startswith("-- Join plan\nFROM posted_headers AS h\n")
+    assert "bronze_erp.billing_header" in steps and "posted_headers" in steps
     assert "SELECT " not in object_document["sample_query"].upper()
-    assert "'WID_GDSBatchID'" in object_document["filter_criteria"]
+    assert "h.GDSBatchID = 'wid_gdsbatchid'" in object_document["filter_criteria"]
     assert parse(response["artifacts"][0]["generated_sql"], read="databricks") == parse(
         billing, read="databricks"
     )
@@ -504,6 +506,7 @@ async def test_embedded_code_examples_deliver_the_mapped_rows_at_runtime() -> No
                 ["I01", "EAST", "001", 28, "POSTED"],
                 ["I01", "WEST", "404", 28, "POSTED"],
                 ["I01", "EAST", "001", 27, "POSTED"],
+                ["I01", "EAST", "001", 29, "POSTED"],
                 ["X", "EAST", "001", 28, "DRAFT"],
             ],
         },
@@ -520,6 +523,7 @@ async def test_embedded_code_examples_deliver_the_mapped_rows_at_runtime() -> No
                 ["I01", "EAST", 1, 28, 2, 9],
                 ["I01", "WEST", 1, 28, 3, 9],
                 ["I01", "EAST", 1, 27, 20, 9],
+                ["I01", "EAST", 1, 29, 30, 9],
                 ["X", "EAST", 1, 28, 2, 9],
             ],
         },
@@ -539,7 +543,7 @@ async def test_embedded_code_examples_deliver_the_mapped_rows_at_runtime() -> No
         },
         "meta.system": {"columns": ["SystemCode", "SystemID"], "rows": [["ERP", 72], ["CRM", 87]]},
     }
-    columns, rows = execute_fixture_sql(billing.replace("'WID_GDSBatchID'", "28"), sources)
+    columns, rows = execute_fixture_sql(billing.replace("'wid_gdsbatchid'", "28"), sources)
     assert columns == [
         a["attribute_name"] for a in target["attributes"] if a["population"] == "mapping"
     ]

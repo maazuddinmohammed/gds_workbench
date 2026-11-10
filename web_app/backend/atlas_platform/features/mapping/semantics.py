@@ -9,24 +9,160 @@ from pydantic import JsonValue
 
 from atlas_platform.features.workflows.authoring.context_inputs import OBJECT_FIELDS, natural_key
 
-from .contracts import CompleteMappingCandidateV1
+from .batch_rules import validate_object_batch_rules
+from .contracts import CompleteMappingCandidateV1, MappingUnresolvedIssue
 from .preparation_contracts import MappingModeledEntity, MappingPreparation
+
+
+def _reference_template_ids(preparation: MappingPreparation) -> dict[str, set[int | None]]:
+    # No selection uses the standard source declarations. Custom templates are opaque.
+    return {
+        kind: {
+            None,
+            *(
+                item.output_template_id
+                for item in preparation.context.output_templates.definitions
+                if item.code.strip().casefold() in codes
+            ),
+        }
+        for kind, codes in MAPPING_REFERENCE_TEMPLATE_CODES.items()
+    }
+
+
+def defer_circular_sources(
+    preparation: MappingPreparation, candidate: CompleteMappingCandidateV1
+) -> tuple[CompleteMappingCandidateV1, bool, set[str]]:
+    """Keep saved logic when a proposed rule needs a circular parent."""
+    deferred_fields = {
+        name.casefold() for name in preparation.readiness.deferred_dependency_attributes
+    }
+    parent_ids = set(preparation.readiness.deferred_dependency_parent_ids)
+    if not deferred_fields and not parent_ids:
+        return candidate, False, set()
+    layer = preparation.context.modeled_entity_type
+    parents = {
+        (obj.entity_schema_name.strip().casefold(), obj.entity_name.strip().casefold())
+        for source in preparation.context.sources
+        if isinstance(obj := source.object, MappingModeledEntity)
+        and obj.entity_type == layer
+        and obj.entity_id in parent_ids
+    }
+    templates = _reference_template_ids(preparation)
+    selections = preparation.plan.output_template_selections
+    family = layer.removesuffix("_entity")
+
+    def declares_parent(
+        document: dict[str, JsonValue] | None, kind: str, template_id: int | None
+    ) -> bool:
+        if not document or template_id not in templates[kind] or not parents:
+            return False
+        object_level = kind == "mapping_object"
+        for field, schema_key, name_key, unified in (
+            (
+                "source_tables" if object_level else "source_columns",
+                "entity_schema_name",
+                "entity_name",
+                True,
+            ),
+            (
+                f"source_{family}_entities" if object_level else f"source_{family}_attributes",
+                f"{family}_entity_schema_name",
+                f"{family}_entity_name",
+                False,
+            ),
+        ):
+            refs = document.get(field)
+            if not isinstance(refs, list):
+                continue
+            for ref in refs:
+                if not isinstance(ref, dict) or (unified and ref.get("entity_type") != layer):
+                    continue
+                schema, name = ref.get(schema_key), ref.get(name_key)
+                if (
+                    isinstance(schema, str)
+                    and isinstance(name, str)
+                    and (schema.strip().casefold(), name.strip().casefold()) in parents
+                ):
+                    return True
+        return False
+
+    header = preparation.context.headers[0]
+    target_fields = {a.attribute_id: a.attribute_name for a in header.modeled_entity.attributes}
+    saved = {target_fields[a.modeled_attribute_id].casefold(): a for a in header.attribute_mappings}
+    proposed = {a.modeled_attribute_name.casefold(): a for a in candidate.attribute_mappings}
+    issues = list(candidate.issues)
+    seen = {(issue.code, issue.modeled_attribute_name) for issue in issues}
+
+    def warn(name: str | None) -> None:
+        key = ("missing_join_evidence", name)
+        if len(issues) < 200 and key not in seen:
+            issues.append(
+                MappingUnresolvedIssue(code="missing_join_evidence", modeled_attribute_name=name)
+            )
+            seen.add(key)
+
+    obj = candidate.object_mapping
+    object_doc = obj.mapping_transformation_document if obj else None
+    obj_id = selections.mapping_object.output_template_id if selections.mapping_object else None
+    attr_id = (
+        selections.mapping_attribute.output_template_id if selections.mapping_attribute else None
+    )
+    circular_object = declares_parent(object_doc, "mapping_object", obj_id)
+    retain_object = circular_object or (
+        object_doc is None
+        and declares_parent(
+            header.transformation_document, "mapping_object", header.output_template_id
+        )
+    )
+    if circular_object and object_doc != header.transformation_document:
+        warn(None)
+    retained_fields: set[str] = set()
+    skip_fields = deferred_fields.copy()
+    for name, existing in saved.items():
+        item = proposed.get(name)
+        doc = item.attribute_mapping_transformation_document if item else None
+        circular_field = declares_parent(doc, "mapping_attribute", attr_id)
+        saved_circular = doc is None and declares_parent(
+            existing.transformation_document, "mapping_attribute", existing.output_template_id
+        )
+        if name in deferred_fields or circular_field or saved_circular:
+            skip_fields.add(name)
+            if existing.transformation_document is not None:
+                retained_fields.add(name)
+            if doc is not None and doc != existing.transformation_document:
+                warn(target_fields[existing.modeled_attribute_id])
+    # A retained field can rely on the old aliases or row grain. Do not change
+    # its rowset when another part of the proposed Mapping was withheld.
+    if retained_fields and object_doc != header.transformation_document:
+        retain_object = True
+        if object_doc is not None:
+            warn(None)
+    normalized = candidate.model_copy(
+        update={
+            "issues": tuple(issues),
+            "object_mapping": None if retain_object else obj,
+            "attribute_mappings": tuple(
+                item
+                for item in candidate.attribute_mappings
+                if item.modeled_attribute_name.casefold() not in skip_fields
+            ),
+        }
+    )
+    return normalized, retain_object and header.transformation_document is not None, retained_fields
 
 
 def validate_mapping_references(
     preparation: MappingPreparation, candidate: CompleteMappingCandidateV1
 ) -> None:
     header = preparation.context.headers[0]
-    builtin_references: dict[str, bool] = {}
-    for kind, selection in (
-        ("mapping_object", preparation.plan.output_template_selections.mapping_object),
-        ("mapping_attribute", preparation.plan.output_template_selections.mapping_attribute),
-    ):
-        builtin_references[kind] = selection is None or any(
-            template.output_template_id == selection.output_template_id
-            and template.code.strip().casefold() in MAPPING_REFERENCE_TEMPLATE_CODES[kind]
-            for template in preparation.context.output_templates.definitions
+    template_ids = _reference_template_ids(preparation)
+    builtin_references = {
+        kind: (selection.output_template_id if selection else None) in template_ids[kind]
+        for kind, selection in (
+            ("mapping_object", preparation.plan.output_template_selections.mapping_object),
+            ("mapping_attribute", preparation.plan.output_template_selections.mapping_attribute),
         )
+    }
     object_document = (
         candidate.object_mapping.mapping_transformation_document
         if candidate.object_mapping
@@ -58,6 +194,12 @@ def validate_mapping_references(
             "Keep existing Object logic unchanged while Attributes are locked or unselected. "
             "Changing joins or grain requires explicitly selecting all affected Attributes."
         )
+    if (
+        builtin_references["mapping_object"]
+        and object_document is not None
+        and object_document != header.transformation_document
+    ):
+        validate_object_batch_rules(preparation, object_document)
     logical_fields = ("logical_entity_schema_name", "logical_entity_name")
     available: dict[tuple[Any, ...], set[str]] = {}
     for source in preparation.context.sources:

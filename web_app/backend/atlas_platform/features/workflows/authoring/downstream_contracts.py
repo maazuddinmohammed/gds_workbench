@@ -200,7 +200,8 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             "description": "Backend-computed action for the Object and each "
             "modeled Attribute. author/extend are actionable; "
             "preserve means omit from authored output. blocked "
-            "is not permission to force a mapping.",
+            "is not permission to force a mapping. Warnings allow a partial draft; "
+            "deferred_dependency_attributes names circular foreign keys for later review.",
             "value_schema": mapping_input_schemas()["readiness"],
             "example": {
                 "headers": [
@@ -238,8 +239,8 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             "schema.",
             "value_schema": mapping_input_schemas()["object_output_template"],
             "example": {
-                "code": "mapping_logical_object_default",
-                "name": "Default Logical Object Mapping",
+                "code": "mapping_logical_object_default_v2",
+                "name": "Logical Object Mapping v2",
                 "description": "Logical Object Mapping using the agreed source, transformation and "
                 "null-handling fields.",
                 "target_type": "mapping_object",
@@ -424,7 +425,8 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
         "mapping_basis": {
             "description": "Ordered cards for one Mapping pair. The target and its fields carry "
             "readiness actions and lineage. Fields report has_saved_rule even when their saved "
-            "documents are deferred. Each eligible source declares its "
+            "documents are deferred. defer_lookup marks a field whose circular lookup "
+            "is deferred. Each eligible source declares its "
             "reference and column_fields for the following column values. Remaining evidence "
             "cards carry relationships, upstream rules, Context and measured evidence. fk_role "
             "indexes each outgoing target Attribute, its parent and returned key. fk_source_link "

@@ -22,6 +22,7 @@ from atlas_platform.features.mapping.preparation_contracts import (
     MappingPreparation,
     MappingRunContext,
     MappingRunContextUnavailableError,
+    MappingTargetDependencyGraph,
     ModeledEntityType,
 )
 from atlas_platform.features.mapping.readiness import assess_mapping_readiness
@@ -695,9 +696,11 @@ async def test_failed_candidate_retention_belongs_to_the_reported_pair(
 
 @pytest.mark.parametrize("mode", ("one_shot", "tool_assisted"))
 @pytest.mark.parametrize("layer", ("logical_entity", "dimensional_entity"))
+@pytest.mark.parametrize("cycle", ("none", "self", "mutual"))
 async def test_mapping_authors_every_selected_entity_individually(
     mode: WorkflowExecutionMode,
     layer: ModeledEntityType,
+    cycle: str,
 ) -> None:
     first = mapping_preparation(
         execution_mode=mode, attribute_count=3, modeled_entity_type=layer
@@ -736,6 +739,32 @@ async def test_mapping_authors_every_selected_entity_individually(
             ),
         }
     )
+    # Both selected pairs see the same frozen graph. A self-reference affects the
+    # archive alone. A mutual cycle defers one foreign key on each Entity.
+    graph = first.context.target_dependency_graph.model_dump()
+    graph["nodes"] = [
+        {
+            **graph["nodes"][0],
+            "modeled_entity_id": target.entity_id,
+            "entity_schema_name": target.entity_schema_name,
+            "entity_name": target.entity_name,
+        }
+        for target in (first.context.target, entity)
+    ]
+    links = {"none": (), "self": ((202, 202),), "mutual": ((201, 202), (202, 201))}
+    graph["edges"] = [
+        {
+            "successor_modeled_entity_id": child,
+            "predecessor_modeled_entity_id": parent,
+            "child_attribute_names": ("CustomerID3",),
+        }
+        for child, parent in links[cycle]
+    ]
+    dependency_graph = MappingTargetDependencyGraph.model_validate(graph, strict=False)
+    first = mapping_validation_preparation(
+        first.plan, first.context.model_copy(update={"target_dependency_graph": dependency_graph})
+    )
+    context = context.model_copy(update={"target_dependency_graph": dependency_graph})
     second = mapping_validation_preparation(plan, context)
     assert first.snapshot is not None and second.snapshot is not None
     section_name = layer.removesuffix("_entity")
@@ -757,16 +786,16 @@ async def test_mapping_authors_every_selected_entity_individually(
             ),
         }
     )
-    agent = _RecordingFake()
+    agent, lifecycle = _RecordingFake(), _Lifecycle()
     service, handoff, no_op, fail = _executor(
         first.model_copy(update={"snapshot": snapshot}),
         agent,
         additional_preparations=(second.model_copy(update={"snapshot": snapshot}),),
+        lifecycle=lifecycle,
     )
     result = await _execute(service)
 
     assert isinstance(result, WorkflowChangeSetHandoffResult)
-    assert result.staged_record_count == 8
     assert len(agent.requests) == 2
     changes = handoff.call_args.kwargs["changes"]
     objects = next(
@@ -776,9 +805,75 @@ async def test_mapping_authors_every_selected_entity_individually(
         "Customer",
         "CustomerArchive",
     }
+    attributes = next(
+        change.records for change in changes if change.dataset == "mapping_attribute"
+    )
+    deferred_targets = {child for child, _ in links[cycle]}
+    assert result.staged_record_count == 8 - len(deferred_targets)
+    pair_events = {
+        call.kwargs["event"].current: call.kwargs["event"]
+        for call in lifecycle.append_event.call_args_list
+        if call.kwargs["event"].stage.startswith("mapping.pair_")
+    }
+    for preparation in (first, second):
+        target = preparation.context.target
+        fields = {
+            row["modeled_attribute_name"]
+            for row in attributes
+            if row["modeled_entity_name"] == target.entity_name
+        }
+        event = pair_events[preparation.plan.selection_ordinal]
+        if target.entity_id in deferred_targets:
+            assert fields == {"CustomerID1", "CustomerID2"}
+            assert event.stage == "mapping.pair_partial" and event.status == "warning"
+            (warning,) = preparation.readiness.warnings
+            assert warning.code == "dependency.cycle" and warning.message in event.message
+        else:
+            assert fields == {"CustomerID1", "CustomerID2", "CustomerID3"}
+            assert event.stage == "mapping.pair_completed" and event.status == "running"
+    final_event = handoff.call_args.kwargs["final_event"]
+    assert final_event.status == ("warning" if deferred_targets else "running")
+    if deferred_targets:
+        assert f"Dependency cycles affect {len(deferred_targets)}" in final_event.message
     handoff.assert_awaited_once()
     no_op.assert_not_awaited()
     fail.assert_not_awaited()
+
+
+async def test_mapping_preserves_locked_cycle_and_records_warning_on_no_op() -> None:
+    preparation = mapping_preparation(existing=True, locked=True)
+    graph = preparation.context.target_dependency_graph.model_dump()
+    graph["edges"] = [
+        {
+            "predecessor_modeled_entity_id": preparation.context.target.entity_id,
+            "successor_modeled_entity_id": preparation.context.target.entity_id,
+            "child_attribute_names": ("CustomerID",),
+        }
+    ]
+    context = preparation.context.model_copy(
+        update={
+            "target_dependency_graph": MappingTargetDependencyGraph.model_validate(
+                graph, strict=False
+            )
+        }
+    )
+    preparation = mapping_validation_preparation(preparation.plan, context)
+    agent, lifecycle = _RecordingFake(), _Lifecycle()
+    service, handoff, no_op, fail = _executor(preparation, agent, lifecycle=lifecycle)
+
+    result = await _execute(service)
+
+    assert isinstance(result, AuthoringNoOpReceipt)
+    assert not agent.requests
+    handoff.assert_not_awaited()
+    fail.assert_not_awaited()
+    (warning,) = preparation.readiness.warnings
+    assert warning.code == "dependency.cycle"
+    preserved = lifecycle.append_event.call_args.kwargs["event"]
+    assert preserved.stage == "mapping.pair_preserved" and preserved.status == "warning"
+    assert warning.message in preserved.message
+    final_event = no_op.call_args.kwargs["request"].final_event
+    assert final_event.status == "warning" and "Dependency cycles" in final_event.message
 
 
 @pytest.mark.parametrize("mode", ("one_shot", "tool_assisted"))

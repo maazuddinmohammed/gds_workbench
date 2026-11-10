@@ -173,6 +173,7 @@ REVOKE ALL ON FUNCTION workflow.list_mapping_branches(BIGINT, VARCHAR) FROM PUBL
 -- Entity the selected source System feeds, mapped yet or not. Explicit model parents
 -- are eligible lookup evidence before Mapping; other peers require a saved Mapping
 -- for that System (at least one rule), whose key rules the lookup repeats.
+-- A target can be its own lookup only through a declared active self-relationship.
 CREATE FUNCTION workflow.list_mapping_source_objects(
     p_project_id BIGINT, p_target_entity_id BIGINT,
     p_modeled_entity_type VARCHAR(30), p_source_system_id BIGINT
@@ -260,8 +261,6 @@ AS $list_mapping_source_objects$
       FROM target
       JOIN workflow.logical_entity AS source ON source.project_id = p_project_id
        AND source.logical_entity_is_active
-       AND (target.modeled_entity_type = 'dimensional_entity'
-            OR source.logical_entity_id <> target.modeled_entity_id)
       LEFT JOIN workflow.dimensional_entity_source_mapping AS support
         ON target.modeled_entity_type = 'dimensional_entity'
        AND support.project_id = p_project_id AND support.dimensional_entity_id = target.modeled_entity_id
@@ -277,6 +276,7 @@ AS $list_mapping_source_objects$
          SELECT 1 FROM workflow.mapping_object AS mapping
          JOIN core.system AS system ON system.system_id = mapping.source_system_id AND system.is_active
           WHERE mapping.project_id = p_project_id AND mapping.logical_entity_id = source.logical_entity_id
+            AND source.logical_entity_id <> target.modeled_entity_id
             AND mapping.modeled_entity_type = 'logical_entity' AND mapping.source_system_id = p_source_system_id
             AND mapping.object_mapping_status = 'active'
             AND (mapping.mapping_transformation_document IS NOT NULL OR EXISTS (
@@ -302,7 +302,6 @@ AS $list_mapping_source_objects$
       JOIN workflow.dimensional_entity AS source ON source.project_id = p_project_id
        AND source.dimensional_entity_is_active
        AND target.modeled_entity_type = 'dimensional_entity'
-       AND source.dimensional_entity_id <> target.modeled_entity_id
      WHERE EXISTS (
          SELECT 1 FROM relationship_parents AS parent
           WHERE parent.entity_type = 'dimensional_entity'
@@ -311,6 +310,7 @@ AS $list_mapping_source_objects$
          SELECT 1 FROM workflow.mapping_object AS mapping
          JOIN core.system AS system ON system.system_id = mapping.source_system_id AND system.is_active
           WHERE mapping.project_id = p_project_id AND mapping.dimensional_entity_id = source.dimensional_entity_id
+            AND source.dimensional_entity_id <> target.modeled_entity_id
             AND mapping.modeled_entity_type = 'dimensional_entity' AND mapping.source_system_id = p_source_system_id
             AND mapping.object_mapping_status = 'active'
             AND (mapping.mapping_transformation_document IS NOT NULL OR EXISTS (

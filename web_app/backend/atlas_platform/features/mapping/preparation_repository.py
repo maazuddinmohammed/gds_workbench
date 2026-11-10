@@ -138,6 +138,7 @@ SELECT run.workflow_run_id,
 # Modeled records keep a boolean lifecycle; Mapping context shows it as a status label.
 _MAPPING_TARGET_NODES_SQL: LiteralString = """
 SELECT jsonb_build_object('modeled_entity_id', entity.modeled_entity_id,
+ 'entity_schema_name', entity.modeled_entity_schema_name, 'entity_name', entity.modeled_entity_name,
  'dependency_order', greatest(max(mapping.object_dependency_order), entity.dependency_order),
  'status', CASE WHEN entity.is_active THEN 'active' ELSE 'inactive' END,
  'has_locked_headers', coalesce(bool_or(mapping.object_mapping_is_locked), false),
@@ -148,7 +149,8 @@ SELECT jsonb_build_object('modeled_entity_id', entity.modeled_entity_id,
   AND coalesce(mapping.logical_entity_id, mapping.dimensional_entity_id) = entity.modeled_entity_id
   AND mapping.object_mapping_status = 'active'
  WHERE entity.project_id = %s AND entity.modeled_entity_type = %s AND entity.is_active
- GROUP BY entity.modeled_entity_id, entity.dependency_order, entity.is_active
+ GROUP BY entity.modeled_entity_id, entity.modeled_entity_schema_name, entity.modeled_entity_name,
+          entity.dependency_order, entity.is_active
  ORDER BY entity.modeled_entity_id
 """
 
@@ -167,9 +169,11 @@ relationships AS (
         dimensional_relationship_from_attribute_id, dimensional_relationship_to_attribute_id
  FROM workflow.dimensional_relationship WHERE dimensional_relationship_is_active
 )
-SELECT DISTINCT jsonb_build_object(
+SELECT jsonb_build_object(
  'predecessor_modeled_entity_id', relation.parent_id,
- 'successor_modeled_entity_id', relation.child_id) AS edge
+ 'successor_modeled_entity_id', relation.child_id,
+ 'child_attribute_names', array_agg(DISTINCT child_attribute.modeled_attribute_name
+                                    ORDER BY child_attribute.modeled_attribute_name)) AS edge
  FROM relationships AS relation JOIN selected_scope AS scope
    ON scope.project_id = relation.project_id AND scope.entity_type = relation.entity_type
  JOIN workflow.modeled_entity AS child ON child.project_id = scope.project_id
@@ -187,6 +191,8 @@ SELECT DISTINCT jsonb_build_object(
    AND parent_attribute.modeled_entity_type = scope.entity_type
    AND parent_attribute.modeled_attribute_id = relation.parent_attribute_id
    AND parent_attribute.is_active
+ GROUP BY relation.parent_id, relation.child_id
+ ORDER BY relation.parent_id, relation.child_id
 """
 
 _MAPPING_ENTITY_CONTEXT_SQL: LiteralString = """

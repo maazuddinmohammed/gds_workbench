@@ -25,8 +25,8 @@
           "entity_name": "Depot"
         }
       ],
-      "filter_criteria": "Drive every dispatch in d.load_batch = 'WID_GDSBatchID'. Aggregate dispatch_detail within load_batch = 'WID_GDSBatchID', retaining only status = 'POSTED', by dispatch_no and load_batch; sum quantity * unit_price - discount without deduplicating lines. Left join totals on dispatch_no and load_batch. Left join each Depot role on its canonical code and SHIP SourceSystemID; all Depot batches remain eligible. Missing depots retain dispatches with null role keys; missing totals become 0.",
-      "sample_query": "FROM bronze.dispatch AS d LEFT JOIN meta.system AS sys ON sys.SystemCode = 'SHIP'. Group bronze.dispatch_detail by dispatch_no and load_batch to sum quantity * unit_price - discount as net_total. LEFT JOIN totals AS dt on d.dispatch_no and d.load_batch. LEFT JOIN silver.Depot as origin and destination matching SourceDepotCode to the uppercase trimmed origin_code or destination_code respectively, with each parent's SourceSystemID = sys.SystemID.",
+      "filter_criteria": "On bronze.dispatch AS d apply d.load_batch = 'wid_gdsbatchid'. Before grouping bronze.dispatch_detail AS l apply l.load_batch = 'wid_gdsbatchid' AND l.status = 'POSTED'.",
+      "sample_query": "-- Join plan\nFROM bronze.dispatch AS d\nLEFT JOIN meta.system AS sys\n    ON sys.SystemCode = 'SHIP'\nLEFT JOIN detail_totals AS dt\n    ON dt.dispatch_no = d.dispatch_no\n    AND dt.load_batch = d.load_batch\nLEFT JOIN silver.Depot AS origin\n    ON origin.SourceDepotCode = UPPER(TRIM(d.origin_code))\n    AND origin.SourceSystemID = sys.SystemID\nLEFT JOIN silver.Depot AS destination\n    ON destination.SourceDepotCode = UPPER(TRIM(d.destination_code))\n    AND destination.SourceSystemID = sys.SystemID\n\n-- Object-level transformations\nBuild detail_totals from bronze.dispatch_detail AS l after applying its filter_criteria. Group by dispatch_no and load_batch. Sum quantity * unit_price - discount as net_total, counting every qualifying line.",
       "fields": [
         {
           "name": "SourceDispatchNo",
@@ -50,7 +50,7 @@
         }
       ]
     },
-    "generated_sql": "CREATE OR REPLACE TEMPORARY VIEW temp_dispatch_ship AS\nWITH detail_totals AS (\n    SELECT dispatch_no, load_batch, SUM(quantity * unit_price - discount) AS net_total\n    FROM bronze.dispatch_detail\n    WHERE load_batch = 'WID_GDSBatchID' AND status = 'POSTED'\n    GROUP BY dispatch_no, load_batch\n)\nSELECT\n    d.dispatch_no AS SourceDispatchNo,\n    origin.DepotID AS OriginDepotID,\n    destination.DepotID AS DestinationDepotID,\n    CAST(COALESCE(dt.net_total, 0) AS STRING) AS ReferenceText,\n    CAST(sys.SystemID AS BIGINT) AS SourceSystemID\nFROM bronze.dispatch AS d LEFT JOIN meta.system AS sys ON sys.SystemCode = 'SHIP'\nLEFT JOIN detail_totals AS dt\n    ON dt.dispatch_no = d.dispatch_no AND dt.load_batch = d.load_batch\nLEFT JOIN silver.Depot AS origin\n    ON origin.SourceDepotCode = UPPER(TRIM(d.origin_code))\n    AND origin.SourceSystemID = CAST(sys.SystemID AS BIGINT)\nLEFT JOIN silver.Depot AS destination\n    ON destination.SourceDepotCode = UPPER(TRIM(d.destination_code))\n    AND destination.SourceSystemID = CAST(sys.SystemID AS BIGINT)\nWHERE d.load_batch = 'WID_GDSBatchID';\n\nSELECT SourceDispatchNo, OriginDepotID, DestinationDepotID, ReferenceText, SourceSystemID\nFROM temp_dispatch_ship;",
+    "generated_sql": "CREATE OR REPLACE TEMPORARY VIEW temp_dispatch_ship AS\nWITH detail_totals AS (\n    SELECT dispatch_no, load_batch, SUM(quantity * unit_price - discount) AS net_total\n    FROM bronze.dispatch_detail\n    WHERE load_batch = 'wid_gdsbatchid' AND status = 'POSTED'\n    GROUP BY dispatch_no, load_batch\n)\nSELECT\n    d.dispatch_no AS SourceDispatchNo,\n    origin.DepotID AS OriginDepotID,\n    destination.DepotID AS DestinationDepotID,\n    CAST(COALESCE(dt.net_total, 0) AS STRING) AS ReferenceText,\n    CAST(sys.SystemID AS BIGINT) AS SourceSystemID\nFROM bronze.dispatch AS d LEFT JOIN meta.system AS sys ON sys.SystemCode = 'SHIP'\nLEFT JOIN detail_totals AS dt\n    ON dt.dispatch_no = d.dispatch_no AND dt.load_batch = d.load_batch\nLEFT JOIN silver.Depot AS origin\n    ON origin.SourceDepotCode = UPPER(TRIM(d.origin_code))\n    AND origin.SourceSystemID = CAST(sys.SystemID AS BIGINT)\nLEFT JOIN silver.Depot AS destination\n    ON destination.SourceDepotCode = UPPER(TRIM(d.destination_code))\n    AND destination.SourceSystemID = CAST(sys.SystemID AS BIGINT)\nWHERE d.load_batch = 'wid_gdsbatchid';\n\nSELECT SourceDispatchNo, OriginDepotID, DestinationDepotID, ReferenceText, SourceSystemID\nFROM temp_dispatch_ship;",
     "sources": {
       "bronze.dispatch": {
         "columns": [
@@ -77,6 +77,12 @@
             "aa",
             "bz",
             14
+          ],
+          [
+            "trip-1",
+            "bz",
+            "aa",
+            16
           ]
         ]
       },
@@ -149,6 +155,14 @@
             100,
             10,
             0
+          ],
+          [
+            "trip-1",
+            16,
+            "POSTED",
+            1,
+            500,
+            0
           ]
         ]
       },
@@ -192,7 +206,7 @@
     }
   },
   "temporal": {
-    "description": "Two parent roles resolve different half-open SCD validity intervals at their respective event timestamps.",
+    "description": "A legacy Mapping mixes the old run token and a highest-batch condition with a System filter and two independent event-time parent lookups. A later batch exists.",
     "source_system_code": "SHIP",
     "batch_value": 15,
     "mapping": {
@@ -208,7 +222,7 @@
           "entity_name": "DimCustomer"
         }
       ],
-      "filter_criteria": "Current run batch for the SHIP driving shipments only. Each customer role resolves the version valid at its own event time using [start,end). Keep missing parent matches. Parent versions do not overlap for one CustomerID and System.",
+      "filter_criteria": "Use s.GDSBatchID = 'WID_GDSBatchID' AND s.GDSBatchID = (SELECT MAX(GDSBatchID) FROM silver.Shipment) AND s.SourceSystemID = <SHIP System ID>. Each customer role resolves the version valid at its own event time using [start,end). Keep missing parent matches. Parent versions do not overlap for one CustomerID and System.",
       "sample_query": "SELECT s.ShipmentNumber, ship.CustomerKey AS ShipCustomerKey, bill.CustomerKey AS BillCustomerKey, s.NetAmount, s.SourceSystemID FROM silver.Shipment s LEFT JOIN gold.DimCustomer ship ON ship.CustomerID = s.ShipCustomerID AND ship.SourceSystemID = s.SourceSystemID AND ship.RecordStartTime <= s.ShipTime AND (s.ShipTime < ship.RecordEndTime OR ship.RecordEndTime IS NULL) LEFT JOIN gold.DimCustomer bill ON bill.CustomerID = s.BillCustomerID AND bill.SourceSystemID = s.SourceSystemID AND bill.RecordStartTime <= s.InvoiceTime AND (s.InvoiceTime < bill.RecordEndTime OR bill.RecordEndTime IS NULL) WHERE s.GDSBatchID = wid_GDSBatchID AND s.SourceSystemID = <SHIP System ID>",
       "fields": [
         {
@@ -233,7 +247,7 @@
         }
       ]
     },
-    "generated_sql": "CREATE OR REPLACE TEMPORARY VIEW temp_fact_shipment_ship AS\nSELECT s.ShipmentNumber AS ShipmentNumber, ship.CustomerKey AS ShipCustomerKey, bill.CustomerKey AS BillCustomerKey, s.NetAmount AS NetAmount, sys.SystemID AS SourceSystemID\nFROM silver.Shipment AS s LEFT JOIN meta.system AS sys ON sys.SystemCode = 'SHIP'\nLEFT JOIN gold.DimCustomer AS ship\n ON ship.CustomerID = s.ShipCustomerID\n AND ship.SourceSystemID = s.SourceSystemID\n AND ship.RecordStartTime <= s.ShipTime\n AND (s.ShipTime < ship.RecordEndTime OR ship.RecordEndTime IS NULL)\nLEFT JOIN gold.DimCustomer AS bill\n ON bill.CustomerID = s.BillCustomerID\n AND bill.SourceSystemID = s.SourceSystemID\n AND bill.RecordStartTime <= s.InvoiceTime\n AND (s.InvoiceTime < bill.RecordEndTime OR bill.RecordEndTime IS NULL)\nWHERE s.GDSBatchID = 'WID_GDSBatchID' AND s.SourceSystemID = sys.SystemID;\n\nSELECT ShipmentNumber, ShipCustomerKey, BillCustomerKey, NetAmount, SourceSystemID FROM temp_fact_shipment_ship;",
+    "generated_sql": "CREATE OR REPLACE TEMPORARY VIEW temp_fact_shipment_ship AS\nSELECT s.ShipmentNumber AS ShipmentNumber, ship.CustomerKey AS ShipCustomerKey, bill.CustomerKey AS BillCustomerKey, s.NetAmount AS NetAmount, sys.SystemID AS SourceSystemID\nFROM silver.Shipment AS s LEFT JOIN meta.system AS sys ON sys.SystemCode = 'SHIP'\nLEFT JOIN gold.DimCustomer AS ship\n ON ship.CustomerID = s.ShipCustomerID\n AND ship.SourceSystemID = s.SourceSystemID\n AND ship.RecordStartTime <= s.ShipTime\n AND (s.ShipTime < ship.RecordEndTime OR ship.RecordEndTime IS NULL)\nLEFT JOIN gold.DimCustomer AS bill\n ON bill.CustomerID = s.BillCustomerID\n AND bill.SourceSystemID = s.SourceSystemID\n AND bill.RecordStartTime <= s.InvoiceTime\n AND (s.InvoiceTime < bill.RecordEndTime OR bill.RecordEndTime IS NULL)\nWHERE s.GDSBatchID = 'wid_gdsbatchid' AND s.SourceSystemID = sys.SystemID;\n\nSELECT ShipmentNumber, ShipCustomerKey, BillCustomerKey, NetAmount, SourceSystemID FROM temp_fact_shipment_ship;",
     "sources": {
       "silver.Shipment": {
         "columns": [
@@ -286,6 +300,16 @@
             2000,
             8,
             15
+          ],
+          [
+            "S1",
+            100,
+            100,
+            "2025-02-01",
+            "2025-07-01",
+            500,
+            7,
+            16
           ]
         ]
       },

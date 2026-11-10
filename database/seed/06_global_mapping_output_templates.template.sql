@@ -28,8 +28,8 @@ BEGIN
         SELECT value FROM jsonb_array_elements($mapping_templates$
 [
   {
-    "output_template_code": "mapping_logical_object_default",
-    "output_template_name": "Default Logical Object Mapping",
+    "output_template_code": "mapping_logical_object_default_v2",
+    "output_template_name": "Logical Object Mapping v2",
     "output_template_description": "Logical Object Mapping using the agreed source, transformation and null-handling fields.",
     "output_template_target_type": "mapping_object",
     "output_template_modeled_entity_type": "logical_entity",
@@ -117,8 +117,8 @@ BEGIN
     ]
   },
   {
-    "output_template_code": "mapping_dimensional_object_default",
-    "output_template_name": "Default Dimensional Object Mapping",
+    "output_template_code": "mapping_dimensional_object_default_v2",
+    "output_template_name": "Dimensional Object Mapping v2",
     "output_template_description": "Dimensional Object Mapping using the agreed source, transformation and null-handling fields.",
     "output_template_target_type": "mapping_object",
     "output_template_modeled_entity_type": "dimensional_entity",

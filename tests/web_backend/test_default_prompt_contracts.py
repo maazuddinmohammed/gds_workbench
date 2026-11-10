@@ -53,9 +53,13 @@ def test_mapping_example_json_preserves_the_displayed_join_plan(mode: str) -> No
     document = json.loads(example[1])["object_mapping"]["mapping_transformation_document"]
     plan = document["sample_query"]
     assert plan == shown[1]
-    assert [line.strip().split()[0] for line in plan.splitlines()] == [
+    join_plan, steps = plan.split("\n\n-- Object-level transformations\n")
+    assert join_plan.startswith("-- Join plan\n")
+    assert [line.strip().split()[0] for line in join_plan.splitlines()[1:]] == [
         "FROM", "LEFT", "ON", "LEFT", "ON", "AND"
     ]
+    assert steps.strip() and "SELECT " not in plan.upper()
+    assert document["filter_criteria"] == "m.gds_batch_id = 'wid_gdsbatchid'"
 
 
 @pytest.mark.parametrize(

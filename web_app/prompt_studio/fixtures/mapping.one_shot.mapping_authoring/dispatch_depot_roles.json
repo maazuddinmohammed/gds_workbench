@@ -947,7 +947,7 @@
         ]
       ],
       "replace": {
-        "'WID_GDSBatchID'": "15"
+        "'wid_gdsbatchid'": "15"
       }
     }
   }

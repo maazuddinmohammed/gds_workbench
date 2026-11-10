@@ -56,9 +56,10 @@ SOURCES: list[dict[str, Any]] = [
 
 
 def edit_context(
-    *, locked: str | None = None
+    *, locked: str | None = None, object_template: str | None = None
 ) -> tuple[ProjectReviewSnapshot, ProjectRecordEditor]:
     graph = complete_project_graph()
+    graph["mapping_object"][0]["output_template_code"] = object_template
     graph["mapping_object"][0]["mapping_transformation_document"] = {
         "source_tables": [REFERENCE],
         "transformation_logic": "Read orders.",
@@ -130,7 +131,7 @@ def test_manual_mapping_edit_preserves_custom_fields_and_unedited_attributes() -
     "violation", ["unselected_table", "outside_scope", "unknown_column"]
 )
 def test_source_columns_require_selected_eligible_tables(violation: str) -> None:
-    review, editor = edit_context()
+    review, editor = edit_context(object_template="mapping_logical_object_default_v2")
     command = save_command(editor)
     reference = {**REFERENCE, "attribute_name": "order_id"}
     if violation == "unselected_table":

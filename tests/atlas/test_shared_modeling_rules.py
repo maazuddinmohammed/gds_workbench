@@ -93,6 +93,13 @@ SHARED_RULES = [
         r"With `GDSBatchID`, each load appends its new and changed rows under a higher batch id",
     ),
     (
+        "the orchestration layer supplies the load batch",
+        ZONE_WORKFLOWS,
+        r"The orchestration layer supplies the batch for each load",
+        "references/terminology.md",
+        r"orchestration supplies the batch",
+    ),
+    (
         "null is unknown, not false or zero",
         ("analysis", "metadata_enrichment_object"),
         r"`null` means (?:unspecified or )?unavailable; `false` and `0`",
@@ -117,9 +124,9 @@ SHARED_RULES = [
     (
         "registered batch filter uses the quoted runtime token",
         ("mapping", "code_generation"),
-        r"'WID_GDSBatchID'",
+        r"'wid_gdsbatchid'",
         "references/code-generation/sql.md",
-        r"'WID_GDSBatchID'",
+        r"'wid_gdsbatchid'",
     ),
     (
         "no invented row choice",

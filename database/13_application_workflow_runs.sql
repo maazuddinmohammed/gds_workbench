@@ -1803,8 +1803,8 @@ BEGIN
                    v_mapping_object_output_template_schema_digest
               FROM application.output_template AS template
              WHERE lower(template.output_template_code) = CASE p_modeled_entity_type
-                       WHEN 'logical_entity' THEN 'mapping_logical_object_default'
-                       ELSE 'mapping_dimensional_object_default' END
+                       WHEN 'logical_entity' THEN 'mapping_logical_object_default_v2'
+                       ELSE 'mapping_dimensional_object_default_v2' END
                AND template.output_template_modeled_entity_type = p_modeled_entity_type
                AND template.output_template_target_type = 'mapping_object'
                AND template.is_active

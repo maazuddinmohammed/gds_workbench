@@ -160,6 +160,8 @@ MAPPING_REFERENCE_TEMPLATE_CODES = {
             "mapping_object_default",
             "mapping_logical_object_default",
             "mapping_dimensional_object_default",
+            "mapping_logical_object_default_v2",
+            "mapping_dimensional_object_default_v2",
         }
     ),
     "mapping_attribute": frozenset(

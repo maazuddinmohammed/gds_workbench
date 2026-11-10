@@ -788,7 +788,7 @@
         "records": [
           {
             "context_group_name": "Customer Orders business rules",
-            "context_record_id": "a52f95e4-5e6f-4402-af64-6479ae7e5a48",
+            "context_record_id": "5dcebe58-763e-4264-9afe-2dc76336fadd",
             "context_text": "Every submitted Order belongs to exactly one Customer.",
             "is_locked": false,
             "source_reference": null,
@@ -796,7 +796,7 @@
           },
           {
             "context_group_name": "Customer Orders business rules",
-            "context_record_id": "ff215595-68ee-4674-b080-174abb40fd65",
+            "context_record_id": "fc1fce0b-5ecf-42e9-8fe5-93faee9edee8",
             "context_text": "One Customer record represents one durable customer identity.",
             "is_locked": false,
             "source_reference": null,
@@ -1452,7 +1452,7 @@
             "object_dependency_order": 0,
             "object_mapping_is_locked": false,
             "object_mapping_status": "active",
-            "output_template_code": "mapping_dimensional_object_default",
+            "output_template_code": "mapping_dimensional_object_default_v2",
             "source_system_code": "DEMO_CUSTOMER_SYSTEM"
           },
           {
@@ -1473,7 +1473,7 @@
             "object_dependency_order": 1,
             "object_mapping_is_locked": false,
             "object_mapping_status": "active",
-            "output_template_code": "mapping_dimensional_object_default",
+            "output_template_code": "mapping_dimensional_object_default_v2",
             "source_system_code": "DEMO_CUSTOMER_SYSTEM"
           },
           {
@@ -1496,7 +1496,7 @@
             "object_dependency_order": 0,
             "object_mapping_is_locked": false,
             "object_mapping_status": "active",
-            "output_template_code": "mapping_logical_object_default",
+            "output_template_code": "mapping_logical_object_default_v2",
             "source_system_code": "DEMO_CUSTOMER_SYSTEM"
           },
           {
@@ -1519,7 +1519,7 @@
             "object_dependency_order": 1,
             "object_mapping_is_locked": false,
             "object_mapping_status": "active",
-            "output_template_code": "mapping_logical_object_default",
+            "output_template_code": "mapping_logical_object_default_v2",
             "source_system_code": "DEMO_CUSTOMER_SYSTEM"
           }
         ],
@@ -1832,7 +1832,7 @@
       "result": {
         "complete": true,
         "component": "target_metadata",
-        "context_digest": "b9ed41f3c990cfcd45801d4ab76c34509052c7099a4ce7bbf593744f04b7bc64",
+        "context_digest": "0ad1749214479d96093eb9bcdb05b0ab66271ff72b8575d30e549af987b51b8c",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -1903,7 +1903,7 @@
     {
       "arguments": {
         "component": "source_metadata",
-        "expected_context_digest": "b9ed41f3c990cfcd45801d4ab76c34509052c7099a4ce7bbf593744f04b7bc64",
+        "expected_context_digest": "0ad1749214479d96093eb9bcdb05b0ab66271ff72b8575d30e549af987b51b8c",
         "expected_project_revision": 1,
         "modeled_entity_name": "Dim Customer",
         "modeled_entity_schema_name": "gold_demo",
@@ -1914,7 +1914,7 @@
       "result": {
         "complete": true,
         "component": "source_metadata",
-        "context_digest": "b9ed41f3c990cfcd45801d4ab76c34509052c7099a4ce7bbf593744f04b7bc64",
+        "context_digest": "0ad1749214479d96093eb9bcdb05b0ab66271ff72b8575d30e549af987b51b8c",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -2181,6 +2181,13 @@
             },
             "rationale": "Available peer Dimensional lookup with applied Mapping for the selected source System.",
             "role": "lookup",
+            "source_system_bindings": [
+              {
+                "source_system_value": 1,
+                "system_code": "DEMO_CUSTOMER_SYSTEM",
+                "system_name": "Demo Customer System"
+              }
+            ],
             "source_system_code": "DEMO_CUSTOMER_SYSTEM"
           }
         ],
@@ -2191,7 +2198,7 @@
     {
       "arguments": {
         "component": "source_systems",
-        "expected_context_digest": "b9ed41f3c990cfcd45801d4ab76c34509052c7099a4ce7bbf593744f04b7bc64",
+        "expected_context_digest": "0ad1749214479d96093eb9bcdb05b0ab66271ff72b8575d30e549af987b51b8c",
         "expected_project_revision": 1,
         "modeled_entity_name": "Dim Customer",
         "modeled_entity_schema_name": "gold_demo",
@@ -2202,7 +2209,7 @@
       "result": {
         "complete": true,
         "component": "source_systems",
-        "context_digest": "b9ed41f3c990cfcd45801d4ab76c34509052c7099a4ce7bbf593744f04b7bc64",
+        "context_digest": "0ad1749214479d96093eb9bcdb05b0ab66271ff72b8575d30e549af987b51b8c",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -2221,7 +2228,7 @@
     {
       "arguments": {
         "component": "object_transformations",
-        "expected_context_digest": "b9ed41f3c990cfcd45801d4ab76c34509052c7099a4ce7bbf593744f04b7bc64",
+        "expected_context_digest": "0ad1749214479d96093eb9bcdb05b0ab66271ff72b8575d30e549af987b51b8c",
         "expected_project_revision": 1,
         "modeled_entity_name": "Dim Customer",
         "modeled_entity_schema_name": "gold_demo",
@@ -2232,7 +2239,7 @@
       "result": {
         "complete": true,
         "component": "object_transformations",
-        "context_digest": "b9ed41f3c990cfcd45801d4ab76c34509052c7099a4ce7bbf593744f04b7bc64",
+        "context_digest": "0ad1749214479d96093eb9bcdb05b0ab66271ff72b8575d30e549af987b51b8c",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -2249,7 +2256,7 @@
               "grain": null
             },
             "object_dependency_order": 0,
-            "output_template_code": "mapping_dimensional_object_default",
+            "output_template_code": "mapping_dimensional_object_default_v2",
             "source_system_code": "DEMO_CUSTOMER_SYSTEM",
             "transformation": {
               "filter_criteria": null,
@@ -2271,7 +2278,7 @@
     {
       "arguments": {
         "component": "attribute_transformations",
-        "expected_context_digest": "b9ed41f3c990cfcd45801d4ab76c34509052c7099a4ce7bbf593744f04b7bc64",
+        "expected_context_digest": "0ad1749214479d96093eb9bcdb05b0ab66271ff72b8575d30e549af987b51b8c",
         "expected_project_revision": 1,
         "modeled_entity_name": "Dim Customer",
         "modeled_entity_schema_name": "gold_demo",
@@ -2282,7 +2289,7 @@
       "result": {
         "complete": true,
         "component": "attribute_transformations",
-        "context_digest": "b9ed41f3c990cfcd45801d4ab76c34509052c7099a4ce7bbf593744f04b7bc64",
+        "context_digest": "0ad1749214479d96093eb9bcdb05b0ab66271ff72b8575d30e549af987b51b8c",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -2350,7 +2357,7 @@
       "result": {
         "complete": true,
         "component": "target_metadata",
-        "context_digest": "56cefa657093109bdd475feb43d8fe833b5737405ffb222bd73b47cce128dc69",
+        "context_digest": "c7a83a7260922bfe28cf8cb96430537fc5de4fc715530136c70a75a57cacaf5b",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -2455,7 +2462,7 @@
     {
       "arguments": {
         "component": "source_metadata",
-        "expected_context_digest": "56cefa657093109bdd475feb43d8fe833b5737405ffb222bd73b47cce128dc69",
+        "expected_context_digest": "c7a83a7260922bfe28cf8cb96430537fc5de4fc715530136c70a75a57cacaf5b",
         "expected_project_revision": 1,
         "modeled_entity_name": "Fact Order",
         "modeled_entity_schema_name": "gold_demo",
@@ -2466,7 +2473,7 @@
       "result": {
         "complete": true,
         "component": "source_metadata",
-        "context_digest": "56cefa657093109bdd475feb43d8fe833b5737405ffb222bd73b47cce128dc69",
+        "context_digest": "c7a83a7260922bfe28cf8cb96430537fc5de4fc715530136c70a75a57cacaf5b",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -2697,8 +2704,15 @@
               "tenant_code": "DEMO_GDS_TENANT",
               "zone_code": "gold"
             },
-            "rationale": "Available peer Dimensional lookup with applied Mapping for the selected source System.",
+            "rationale": "Modeled relationship parent; use its business identity and returned key.",
             "role": "lookup",
+            "source_system_bindings": [
+              {
+                "source_system_value": 1,
+                "system_code": "DEMO_CUSTOMER_SYSTEM",
+                "system_name": "Demo Customer System"
+              }
+            ],
             "source_system_code": "DEMO_CUSTOMER_SYSTEM"
           }
         ],
@@ -2709,7 +2723,7 @@
     {
       "arguments": {
         "component": "source_systems",
-        "expected_context_digest": "56cefa657093109bdd475feb43d8fe833b5737405ffb222bd73b47cce128dc69",
+        "expected_context_digest": "c7a83a7260922bfe28cf8cb96430537fc5de4fc715530136c70a75a57cacaf5b",
         "expected_project_revision": 1,
         "modeled_entity_name": "Fact Order",
         "modeled_entity_schema_name": "gold_demo",
@@ -2720,7 +2734,7 @@
       "result": {
         "complete": true,
         "component": "source_systems",
-        "context_digest": "56cefa657093109bdd475feb43d8fe833b5737405ffb222bd73b47cce128dc69",
+        "context_digest": "c7a83a7260922bfe28cf8cb96430537fc5de4fc715530136c70a75a57cacaf5b",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -2739,7 +2753,7 @@
     {
       "arguments": {
         "component": "object_transformations",
-        "expected_context_digest": "56cefa657093109bdd475feb43d8fe833b5737405ffb222bd73b47cce128dc69",
+        "expected_context_digest": "c7a83a7260922bfe28cf8cb96430537fc5de4fc715530136c70a75a57cacaf5b",
         "expected_project_revision": 1,
         "modeled_entity_name": "Fact Order",
         "modeled_entity_schema_name": "gold_demo",
@@ -2750,7 +2764,7 @@
       "result": {
         "complete": true,
         "component": "object_transformations",
-        "context_digest": "56cefa657093109bdd475feb43d8fe833b5737405ffb222bd73b47cce128dc69",
+        "context_digest": "c7a83a7260922bfe28cf8cb96430537fc5de4fc715530136c70a75a57cacaf5b",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -2767,7 +2781,7 @@
               "grain": "One row per submitted Order"
             },
             "object_dependency_order": 1,
-            "output_template_code": "mapping_dimensional_object_default",
+            "output_template_code": "mapping_dimensional_object_default_v2",
             "source_system_code": "DEMO_CUSTOMER_SYSTEM",
             "transformation": {
               "filter_criteria": null,
@@ -2789,7 +2803,7 @@
     {
       "arguments": {
         "component": "attribute_transformations",
-        "expected_context_digest": "56cefa657093109bdd475feb43d8fe833b5737405ffb222bd73b47cce128dc69",
+        "expected_context_digest": "c7a83a7260922bfe28cf8cb96430537fc5de4fc715530136c70a75a57cacaf5b",
         "expected_project_revision": 1,
         "modeled_entity_name": "Fact Order",
         "modeled_entity_schema_name": "gold_demo",
@@ -2800,7 +2814,7 @@
       "result": {
         "complete": true,
         "component": "attribute_transformations",
-        "context_digest": "56cefa657093109bdd475feb43d8fe833b5737405ffb222bd73b47cce128dc69",
+        "context_digest": "c7a83a7260922bfe28cf8cb96430537fc5de4fc715530136c70a75a57cacaf5b",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -2912,7 +2926,7 @@
       "result": {
         "complete": true,
         "component": "target_metadata",
-        "context_digest": "031ddb886597a497f58730eabf720f5c35c6146a69f55e9e0f46565f91aeb150",
+        "context_digest": "2ec8600d6a71061d9693cec1c17da099a3df527ea69a58ecfd025bfac970b4ee",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -2983,7 +2997,7 @@
     {
       "arguments": {
         "component": "source_metadata",
-        "expected_context_digest": "031ddb886597a497f58730eabf720f5c35c6146a69f55e9e0f46565f91aeb150",
+        "expected_context_digest": "2ec8600d6a71061d9693cec1c17da099a3df527ea69a58ecfd025bfac970b4ee",
         "expected_project_revision": 1,
         "modeled_entity_name": "Customer",
         "modeled_entity_schema_name": "silver_demo",
@@ -2994,7 +3008,7 @@
       "result": {
         "complete": true,
         "component": "source_metadata",
-        "context_digest": "031ddb886597a497f58730eabf720f5c35c6146a69f55e9e0f46565f91aeb150",
+        "context_digest": "2ec8600d6a71061d9693cec1c17da099a3df527ea69a58ecfd025bfac970b4ee",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -3263,6 +3277,13 @@
             },
             "rationale": "Available peer Logical lookup with applied Mapping for the selected source System.",
             "role": "lookup",
+            "source_system_bindings": [
+              {
+                "source_system_value": 1,
+                "system_code": "DEMO_CUSTOMER_SYSTEM",
+                "system_name": "Demo Customer System"
+              }
+            ],
             "source_system_code": "DEMO_CUSTOMER_SYSTEM"
           }
         ],
@@ -3273,7 +3294,7 @@
     {
       "arguments": {
         "component": "source_systems",
-        "expected_context_digest": "031ddb886597a497f58730eabf720f5c35c6146a69f55e9e0f46565f91aeb150",
+        "expected_context_digest": "2ec8600d6a71061d9693cec1c17da099a3df527ea69a58ecfd025bfac970b4ee",
         "expected_project_revision": 1,
         "modeled_entity_name": "Customer",
         "modeled_entity_schema_name": "silver_demo",
@@ -3284,7 +3305,7 @@
       "result": {
         "complete": true,
         "component": "source_systems",
-        "context_digest": "031ddb886597a497f58730eabf720f5c35c6146a69f55e9e0f46565f91aeb150",
+        "context_digest": "2ec8600d6a71061d9693cec1c17da099a3df527ea69a58ecfd025bfac970b4ee",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -3303,7 +3324,7 @@
     {
       "arguments": {
         "component": "object_transformations",
-        "expected_context_digest": "031ddb886597a497f58730eabf720f5c35c6146a69f55e9e0f46565f91aeb150",
+        "expected_context_digest": "2ec8600d6a71061d9693cec1c17da099a3df527ea69a58ecfd025bfac970b4ee",
         "expected_project_revision": 1,
         "modeled_entity_name": "Customer",
         "modeled_entity_schema_name": "silver_demo",
@@ -3314,7 +3335,7 @@
       "result": {
         "complete": true,
         "component": "object_transformations",
-        "context_digest": "031ddb886597a497f58730eabf720f5c35c6146a69f55e9e0f46565f91aeb150",
+        "context_digest": "2ec8600d6a71061d9693cec1c17da099a3df527ea69a58ecfd025bfac970b4ee",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -3331,7 +3352,7 @@
               "grain": "One Customer"
             },
             "object_dependency_order": 0,
-            "output_template_code": "mapping_logical_object_default",
+            "output_template_code": "mapping_logical_object_default_v2",
             "source_system_code": "DEMO_CUSTOMER_SYSTEM",
             "transformation": {
               "filter_criteria": null,
@@ -3355,7 +3376,7 @@
     {
       "arguments": {
         "component": "attribute_transformations",
-        "expected_context_digest": "031ddb886597a497f58730eabf720f5c35c6146a69f55e9e0f46565f91aeb150",
+        "expected_context_digest": "2ec8600d6a71061d9693cec1c17da099a3df527ea69a58ecfd025bfac970b4ee",
         "expected_project_revision": 1,
         "modeled_entity_name": "Customer",
         "modeled_entity_schema_name": "silver_demo",
@@ -3366,7 +3387,7 @@
       "result": {
         "complete": true,
         "component": "attribute_transformations",
-        "context_digest": "031ddb886597a497f58730eabf720f5c35c6146a69f55e9e0f46565f91aeb150",
+        "context_digest": "2ec8600d6a71061d9693cec1c17da099a3df527ea69a58ecfd025bfac970b4ee",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -3438,7 +3459,7 @@
       "result": {
         "complete": true,
         "component": "target_metadata",
-        "context_digest": "b180fca7021f7b3f5c3d90ca05e50f076a3be34f34dcd79f63f21e95caf275ba",
+        "context_digest": "12383e513e1d7ca0a6d1d25161d6f042757a62435e296dc87ac8e89c178abc2f",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -3543,7 +3564,7 @@
     {
       "arguments": {
         "component": "source_metadata",
-        "expected_context_digest": "b180fca7021f7b3f5c3d90ca05e50f076a3be34f34dcd79f63f21e95caf275ba",
+        "expected_context_digest": "12383e513e1d7ca0a6d1d25161d6f042757a62435e296dc87ac8e89c178abc2f",
         "expected_project_revision": 1,
         "modeled_entity_name": "Order",
         "modeled_entity_schema_name": "silver_demo",
@@ -3554,7 +3575,7 @@
       "result": {
         "complete": true,
         "component": "source_metadata",
-        "context_digest": "b180fca7021f7b3f5c3d90ca05e50f076a3be34f34dcd79f63f21e95caf275ba",
+        "context_digest": "12383e513e1d7ca0a6d1d25161d6f042757a62435e296dc87ac8e89c178abc2f",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -3787,8 +3808,15 @@
               "tenant_code": "DEMO_GDS_TENANT",
               "zone_code": "silver"
             },
-            "rationale": "Available peer Logical lookup with applied Mapping for the selected source System.",
+            "rationale": "Modeled relationship parent; use its business identity and returned key.",
             "role": "lookup",
+            "source_system_bindings": [
+              {
+                "source_system_value": 1,
+                "system_code": "DEMO_CUSTOMER_SYSTEM",
+                "system_name": "Demo Customer System"
+              }
+            ],
             "source_system_code": "DEMO_CUSTOMER_SYSTEM"
           }
         ],
@@ -3799,7 +3827,7 @@
     {
       "arguments": {
         "component": "source_systems",
-        "expected_context_digest": "b180fca7021f7b3f5c3d90ca05e50f076a3be34f34dcd79f63f21e95caf275ba",
+        "expected_context_digest": "12383e513e1d7ca0a6d1d25161d6f042757a62435e296dc87ac8e89c178abc2f",
         "expected_project_revision": 1,
         "modeled_entity_name": "Order",
         "modeled_entity_schema_name": "silver_demo",
@@ -3810,7 +3838,7 @@
       "result": {
         "complete": true,
         "component": "source_systems",
-        "context_digest": "b180fca7021f7b3f5c3d90ca05e50f076a3be34f34dcd79f63f21e95caf275ba",
+        "context_digest": "12383e513e1d7ca0a6d1d25161d6f042757a62435e296dc87ac8e89c178abc2f",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -3829,7 +3857,7 @@
     {
       "arguments": {
         "component": "object_transformations",
-        "expected_context_digest": "b180fca7021f7b3f5c3d90ca05e50f076a3be34f34dcd79f63f21e95caf275ba",
+        "expected_context_digest": "12383e513e1d7ca0a6d1d25161d6f042757a62435e296dc87ac8e89c178abc2f",
         "expected_project_revision": 1,
         "modeled_entity_name": "Order",
         "modeled_entity_schema_name": "silver_demo",
@@ -3840,7 +3868,7 @@
       "result": {
         "complete": true,
         "component": "object_transformations",
-        "context_digest": "b180fca7021f7b3f5c3d90ca05e50f076a3be34f34dcd79f63f21e95caf275ba",
+        "context_digest": "12383e513e1d7ca0a6d1d25161d6f042757a62435e296dc87ac8e89c178abc2f",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -3857,7 +3885,7 @@
               "grain": "One submitted Order"
             },
             "object_dependency_order": 1,
-            "output_template_code": "mapping_logical_object_default",
+            "output_template_code": "mapping_logical_object_default_v2",
             "source_system_code": "DEMO_CUSTOMER_SYSTEM",
             "transformation": {
               "filter_criteria": null,
@@ -3881,7 +3909,7 @@
     {
       "arguments": {
         "component": "attribute_transformations",
-        "expected_context_digest": "b180fca7021f7b3f5c3d90ca05e50f076a3be34f34dcd79f63f21e95caf275ba",
+        "expected_context_digest": "12383e513e1d7ca0a6d1d25161d6f042757a62435e296dc87ac8e89c178abc2f",
         "expected_project_revision": 1,
         "modeled_entity_name": "Order",
         "modeled_entity_schema_name": "silver_demo",
@@ -3892,7 +3920,7 @@
       "result": {
         "complete": true,
         "component": "attribute_transformations",
-        "context_digest": "b180fca7021f7b3f5c3d90ca05e50f076a3be34f34dcd79f63f21e95caf275ba",
+        "context_digest": "12383e513e1d7ca0a6d1d25161d6f042757a62435e296dc87ac8e89c178abc2f",
         "issues": [],
         "next_cursor": null,
         "project_id": 1,
@@ -4006,11 +4034,11 @@
       "result": {
         "content_type": "application/zip",
         "download_url": "file:///atlas-eval-snapshot.zip",
-        "download_url_expires_at": "2026-10-30T01:59:09.786828Z",
+        "download_url_expires_at": "2026-11-10T16:41:54.230981Z",
         "schema_version": "3.0",
-        "sha256": "eae44d5e9d6ac1d7ab55a936477afefe495ae0ff8eeacbfa2ba9ce77cda5379a",
-        "size_bytes": 101185,
-        "snapshot_id": "d5665f38-353a-4541-95bc-d60161e7584b",
+        "sha256": "4cb78b4ef42808b6a40b3e482cff3d589f41b296a2634e558cd5cc120e08efbc",
+        "size_bytes": 101181,
+        "snapshot_id": "99a9ab40-7571-4600-810d-e1e4e91ac30a",
         "snapshot_kind": "metadata",
         "status": "ready",
         "tenant_id": 1
@@ -4024,13 +4052,13 @@
       "result": {
         "content_type": "application/zip",
         "download_url": "file:///atlas-eval-snapshot.zip",
-        "download_url_expires_at": "2026-10-30T01:59:09.846375Z",
+        "download_url_expires_at": "2026-11-10T16:41:54.289247Z",
         "project_id": 1,
         "project_revision": 1,
         "schema_version": "3.0",
-        "sha256": "eba5b88c030ad127a3882dadbc1f2c8cc18a2db2592eab355d53a3b6baaf0ae2",
-        "size_bytes": 65064,
-        "snapshot_id": "b9e075f0-5fc4-4d49-86c0-6da67aff3d4f",
+        "sha256": "45554729e43fc109d611bc498db6957a4a9e37d8cc9184dd0beef9dcdae09fd4",
+        "size_bytes": 65059,
+        "snapshot_id": "644e11ba-c750-4329-8746-9a1f8965c592",
         "snapshot_kind": "project",
         "status": "ready"
       },
@@ -4041,15 +4069,15 @@
   "snapshots": {
     "metadata": {
       "file": "metadata-snapshot.zip",
-      "sha256": "eae44d5e9d6ac1d7ab55a936477afefe495ae0ff8eeacbfa2ba9ce77cda5379a",
-      "size_bytes": 101185,
-      "snapshot_id": "d5665f38-353a-4541-95bc-d60161e7584b"
+      "sha256": "4cb78b4ef42808b6a40b3e482cff3d589f41b296a2634e558cd5cc120e08efbc",
+      "size_bytes": 101181,
+      "snapshot_id": "99a9ab40-7571-4600-810d-e1e4e91ac30a"
     },
     "project": {
       "file": "project-snapshot.zip",
-      "sha256": "eba5b88c030ad127a3882dadbc1f2c8cc18a2db2592eab355d53a3b6baaf0ae2",
-      "size_bytes": 65064,
-      "snapshot_id": "b9e075f0-5fc4-4d49-86c0-6da67aff3d4f"
+      "sha256": "45554729e43fc109d611bc498db6957a4a9e37d8cc9184dd0beef9dcdae09fd4",
+      "size_bytes": 65059,
+      "snapshot_id": "644e11ba-c750-4329-8746-9a1f8965c592"
     }
   },
   "tenant": {

@@ -271,6 +271,23 @@ def build_mapping_execution_context(
 ) -> MappingExecutionContext:
     """Prepare author-selected natural-key values and optional frozen readers."""
 
+    deferred_parents = set(preparation.readiness.deferred_dependency_parent_ids)
+    if deferred_parents:
+        # These parents remain available to human review and downstream consumers of
+        # an applied Mapping. They cannot supply rows for this first-pass author.
+        sources = tuple(
+            source
+            for source in preparation.context.sources
+            if not (
+                source.role == "lookup"
+                and isinstance(source.object, MappingModeledEntity)
+                and source.object.entity_type == preparation.plan.modeled_entity_type
+                and source.object.entity_id in deferred_parents
+            )
+        )
+        preparation = preparation.model_copy(
+            update={"context": preparation.context.model_copy(update={"sources": sources})}
+        )
     selected_limits = limits or load_default_mapping_execution_context_limits()
     stage = preparation.plan.agent_plan.stages[0]
     referenced = referenced_prompt_names(stage.templates)

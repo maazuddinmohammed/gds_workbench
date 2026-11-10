@@ -6,9 +6,11 @@ from typing import Any, cast
 
 import pytest
 from atlas_mcp.domain.errors import InvalidRequestError
+from atlas_platform.features.mapping import assess_mapping_readiness
 from atlas_platform.features.mapping.execution_context import (
     build_mapping_execution_context,
 )
+from atlas_platform.features.mapping.preparation_contracts import MappingTargetDependencyEdge
 from atlas_platform.features.workflows.authoring.context import (
     AgentContextToolRequestError,
 )
@@ -253,3 +255,52 @@ def test_saved_custom_mapping_prompt_resolves_only_named_jinja_inputs() -> None:
         only_referenced=True,
     )
     assert result == {prefix + "source_evidence": []}
+
+
+@pytest.mark.parametrize("mode", ("one_shot", "tool_assisted"))
+def test_mapping_basis_marks_only_the_cyclic_fk_for_initial_mapping(mode: Any) -> None:
+    prep = mapping_preparation(attribute_count=2, execution_mode=mode)
+    independent, cyclic = (a.attribute_name for a in prep.context.target.attributes)
+    target = prep.context.target
+    self_lookup = prep.context.sources[0].model_copy(update={"role": "lookup", "object": target})
+    self_edge = MappingTargetDependencyEdge(
+        predecessor_modeled_entity_id=target.entity_id,
+        successor_modeled_entity_id=target.entity_id,
+        child_attribute_names=(cyclic,),
+    )
+    context = prep.context.model_copy(update={
+        "sources": (*prep.context.sources, self_lookup),
+        "target_dependency_graph": prep.context.target_dependency_graph.model_copy(
+            update={"edges": (self_edge,)}
+        ),
+    })
+    readiness = assess_mapping_readiness(plan=prep.plan, context=context)
+    assert readiness.ready and readiness.deferred_dependency_attributes == (cyclic,)
+    assert "deferred_dependency_parent_ids" not in readiness.model_dump()
+    prep = prep.model_copy(update={"context": context, "readiness": readiness})
+    agent_plan = prep.plan.agent_plan
+    stage = agent_plan.stages[0].model_copy(
+        update={
+            "templates": PromptComponentTemplates(
+                system="Map the target.", instruction="{{ mapping_basis }}"
+            )
+        }
+    )
+    plan = prep.plan.model_copy(
+        update={"agent_plan": agent_plan.model_copy(update={"stages": (stage,)})}
+    )
+    request = build_mapping_execution_context(
+        preparation=prep.model_copy(update={"plan": plan}), execution_mode=mode
+    )
+    if mode == "one_shot":
+        cards = cast(dict[str, Any], request.embedded_context)["values"]["mapping_basis"]
+    else:
+        assert request.tool_catalog is not None
+        page = cast(dict[str, Any], request.tool_catalog.invoke("get_mapping_basis", {}))
+        cards = page["items"]
+    fields = {c["record"]["attribute_name"]: c["record"] for c in cards if c["kind"] == "field"}
+    assert fields[cyclic]["defer_lookup"] is True
+    assert "defer_lookup" not in fields[independent]
+    directory = [row["record"] for row in cards if row["kind"] == "source"]
+    assert {row["role"] for row in directory} == {"support"}
+    assert directory[0]["object_name"] == "customer"

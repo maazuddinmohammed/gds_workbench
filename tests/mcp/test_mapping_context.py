@@ -160,6 +160,7 @@ def test_current_default_references_are_checked_without_legacy_field_requirement
 @pytest.mark.parametrize("wrong_schema", [False, True])
 def test_current_dimensional_reference_uses_exact_logical_identity(wrong_schema):
     value = context()
+    value["object_mappings"][0]["output_template_code"] = "mapping_dimensional_object_default_v2"
     value["target"]["modeled_entity_type"] = "dimensional_entity"
     source = value["physical_sources"][0]["object"]
     source.update(
@@ -185,6 +186,7 @@ def test_current_dimensional_reference_uses_exact_logical_identity(wrong_schema)
     result = page(value)
     assert result.complete is not wrong_schema
     if wrong_schema:
+        assert "mapping_source_object_missing_or_ineligible" in result.issues
         assert "mapping_source_attribute_missing_or_ineligible" in result.issues
 
 
@@ -217,10 +219,11 @@ def test_custom_template_controls_meaning_of_reference_named_fields(legacy_names
     assert page(value).complete
 
 
-def test_named_default_template_still_rejects_invalid_current_references():
+@pytest.mark.parametrize("suffix", ["", "_v2"])
+def test_named_default_template_still_rejects_invalid_current_references(suffix):
     value = context()
     value["object_mappings"][0].update(
-        output_template_code="mapping_logical_object_default",
+        output_template_code=f"mapping_logical_object_default{suffix}",
         transformation={"source_tables": ["customer_source"]},
     )
     value["attribute_mappings"][1].update(
@@ -256,10 +259,8 @@ def test_historical_default_templates_retain_legacy_reference_checks(invalid):
     result = page(value)
     assert result.complete is (invalid is None)
     if invalid is not None:
-        assert (
-            f"mapping_source_{'object' if invalid == 'table' else 'attribute'}_missing_or_ineligible"
-            in result.issues
-        )
+        kind = "object" if invalid == "table" else "attribute"
+        assert f"mapping_source_{kind}_missing_or_ineligible" in result.issues
 
 
 @pytest.mark.parametrize("missing_object", [False, True])

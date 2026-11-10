@@ -584,8 +584,8 @@ BEGIN
           ) AS example(layer, logical_id, dimensional_id, dependency_order, document)
           JOIN application.output_template AS template
             ON template.output_template_code = CASE example.layer
-                WHEN 'logical_entity' THEN 'mapping_logical_object_default'
-                ELSE 'mapping_dimensional_object_default' END
+                WHEN 'logical_entity' THEN 'mapping_logical_object_default_v2'
+                ELSE 'mapping_dimensional_object_default_v2' END
         RETURNING mapping_object_id
     LOOP
         INSERT INTO workflow.mapping_attribute (

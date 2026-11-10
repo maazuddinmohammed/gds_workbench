@@ -343,6 +343,7 @@ def compact_mapping_basis(
     if header["transformation_document"] is not None:
         target_record["saved"] = header["transformation_document"]
     cards: list[dict[str, Any]] = [{"kind": "target", "record": target_record}]
+    deferred_lookups = set(values["readiness"].get("deferred_dependency_attributes", ()))
     for attribute in sorted(target["attributes"], key=lambda row: row["ordinal_position"]):
         name = attribute["attribute_name"]
         field = {
@@ -357,6 +358,8 @@ def compact_mapping_basis(
         }
         if name in saved:
             field["saved"] = saved[name]
+        if name in deferred_lookups:
+            field["defer_lookup"] = True
         cards.append({"kind": "field", "record": field})
 
     # Ordering is for navigation only. Even a late candidate may be needed by a

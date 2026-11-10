@@ -19,6 +19,7 @@ from atlas_mcp.infrastructure.postgres import (
     ReadTransaction,
 )
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from atlas_platform.features.workflows.authoring.plan import AgentRunPlan
 
@@ -162,6 +163,8 @@ class MappingSourceSystem(_FrozenProject):
 
 class MappingTargetDependencyNode(_FrozenProject):
     modeled_entity_id: int = Field(gt=0)
+    entity_schema_name: str | None = Field(default=None, exclude=True, repr=False)
+    entity_name: str | None = Field(default=None, exclude=True, repr=False)
     dependency_order: int = Field(ge=0)
     status: LifecycleStatus
     has_locked_headers: bool
@@ -171,6 +174,7 @@ class MappingTargetDependencyNode(_FrozenProject):
 class MappingTargetDependencyEdge(_FrozenProject):
     predecessor_modeled_entity_id: int = Field(gt=0)
     successor_modeled_entity_id: int = Field(gt=0)
+    child_attribute_names: tuple[str, ...] = Field(default=(), exclude=True, repr=False)
 
 
 class MappingTargetDependencyGraph(_FrozenProject):
@@ -364,6 +368,11 @@ class MappingReadiness(_FrozenProject):
     operation: MappingOperation
     headers: tuple[MappingHeaderReadiness, ...]
     issues: tuple[MappingReadinessIssue, ...]
+    warnings: tuple[MappingReadinessIssue, ...] = ()
+    deferred_dependency_attributes: tuple[str, ...] = ()
+    deferred_dependency_parent_ids: SkipJsonSchema[tuple[int, ...]] = Field(
+        default=(), exclude=True, repr=False
+    )
 
 
 class MappingPreparation(_FrozenProject):

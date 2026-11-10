@@ -25,10 +25,18 @@ from .semantics import validate_mapping_references
 class MappingCandidateReconciler:
     """Derive identity/status server-side and stage only effective deltas."""
 
-    def __init__(self, *, preparation: MappingPreparation) -> None:
+    def __init__(
+        self,
+        *,
+        preparation: MappingPreparation,
+        retain_saved_object: bool = False,
+        retain_saved_attributes: frozenset[str] = frozenset(),
+    ) -> None:
         if not preparation.readiness.ready:
             raise ValueError("Mapping reconciliation requires a ready preparation")
         self._preparation = preparation
+        self._retain_saved_object = retain_saved_object
+        self._retain_saved_attributes = retain_saved_attributes
 
     def reconcile(
         self,
@@ -63,6 +71,7 @@ class MappingCandidateReconciler:
             item.attribute_name.casefold(): item
             for item in header.modeled_entity.attributes
             if item.attribute_id in actionable_attribute_ids
+            and item.attribute_name.casefold() not in self._retain_saved_attributes
         }
         returned_names = {
             item.modeled_attribute_name.casefold() for item in candidate.attribute_mappings
@@ -83,11 +92,10 @@ class MappingCandidateReconciler:
         )
         if existing_parent or has_output:
             current = _current_object_record(self._preparation, header)
-            next_document = (
-                header.transformation_document
-                if not object_actionable
+            preserve_object_logic = (
+                self._retain_saved_object
+                or not object_actionable
                 or (preserved_attributes and header.transformation_document is not None)
-                else object_document
             )
             authored = MappingObjectRecord(
                 modeled_entity_type=self._preparation.plan.modeled_entity_type,
@@ -95,20 +103,23 @@ class MappingCandidateReconciler:
                 modeled_entity_name=header.modeled_entity.entity_name,
                 source_system_code=self._preparation.context.source_system.system_code,
                 output_template_code=(
-                    _output_template_code(
-                        self._preparation,
-                        self._preparation.plan.output_template_selections.mapping_object,
-                    )
-                    if object_actionable
-                    else _template_code_by_id(
+                    _template_code_by_id(
                         self._preparation,
                         header.output_template_id,
+                    )
+                    if preserve_object_logic
+                    else _output_template_code(
+                        self._preparation,
+                        self._preparation.plan.output_template_selections.mapping_object,
                     )
                 ),
                 # Every pair shares the frozen graph. An agent-supplied increase
                 # could otherwise put this parent after its already-prepared child.
                 object_dependency_order=readiness.required_dependency_order,
-                mapping_transformation_document=cast(dict[str, object] | None, next_document),
+                mapping_transformation_document=cast(
+                    dict[str, object] | None,
+                    header.transformation_document if preserve_object_logic else object_document,
+                ),
                 object_mapping_status="active" if has_output else header.status,
                 object_mapping_is_locked=header.is_locked,
             )

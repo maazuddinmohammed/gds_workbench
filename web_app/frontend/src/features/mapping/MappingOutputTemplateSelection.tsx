@@ -29,7 +29,7 @@ export function MappingOutputTemplateSelection({
       <div className="agent-run-grid">
         <OutputTemplateSelect
           label="Object Mapping Output Template"
-          defaultCode={`mapping_${layer}_object_default`}
+          defaultCode={`mapping_${layer}_object_default_v2`}
           templates={mappingObjects}
           value={objectValue}
           disabled={disabled}

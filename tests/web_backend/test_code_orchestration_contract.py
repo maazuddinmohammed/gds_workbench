@@ -102,14 +102,18 @@ async def test_complex_mapping_and_generated_sql_preserve_expected_rows(scenario
     # legacy sample contains a full projection. Only the Code artifact is executed.
     obj = case["mapping"]
     if scenario == "rollup":
-        assert obj["sample_query"].startswith("FROM ")
+        join_plan, steps = obj["sample_query"].split("\n\n-- Object-level transformations\n")
+        assert join_plan.startswith("-- Join plan\nFROM ")
+        assert "detail_totals" in join_plan and "detail_totals" in steps
         assert "SELECT " not in obj["sample_query"].upper()
-        assert "'WID_GDSBatchID'" in obj["filter_criteria"]
+        assert "'wid_gdsbatchid'" in obj["filter_criteria"]
     else:
         assert obj["sample_query"].startswith("SELECT ")
         assert "<SHIP System ID>" in obj["sample_query"]
-    assert "'WID_GDSBatchID'" in sql
-    bound = sql.replace("'WID_GDSBatchID'", str(case["batch_value"]))
+        assert "MAX(GDSBatchID)" in obj["filter_criteria"]
+        assert "'WID_GDSBatchID'" in obj["filter_criteria"]
+    assert "'wid_gdsbatchid'" in sql
+    bound = sql.replace("'wid_gdsbatchid'", str(case["batch_value"]))
     columns, rows = execute_fixture_sql(bound, case["sources"])
     assert columns == expected["columns"]
     assert rows == sorted((tuple(row) for row in expected["rows"]), key=repr)

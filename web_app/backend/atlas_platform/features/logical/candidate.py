@@ -1178,8 +1178,7 @@ class LogicalCandidateValidator:
         resolved, _ = resolve_dependency_orders(
             orders, relationships.values(), targets=affected, include_dependents=True
         )
-        # Self and cyclic associations remain valid model evidence. Mapping
-        # readiness reports that their loads need an explicit execution strategy.
+        # Mapping can draft the other fields while circular lookups await review.
         for key, order in resolved.items():
             if order == orders[key]:
                 continue

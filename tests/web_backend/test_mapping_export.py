@@ -121,7 +121,9 @@ def setup_export(
 async def test_exports_saved_mapping_under_one_authorized_repeatable_read(
     layer: MappingEntityType, zone: str
 ) -> None:
-    service, database, transaction, authorizer = setup_export()
+    service, database, transaction, authorizer = setup_export(
+        template=f"mapping_{layer.removesuffix('_entity')}_object_default_v2"
+    )
     principal = MagicMock(spec=RequestPrincipal)
     download = await service.export_workbook(
         principal,

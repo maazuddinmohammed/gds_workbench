@@ -3,6 +3,7 @@
 # Existing builders create only fixture-owned disposable database contents.
 # pyright: reportPrivateUsage=false
 import asyncio
+import sqlite3
 from typing import Literal, cast
 from uuid import uuid4
 
@@ -251,6 +252,7 @@ async def test_worker_completes_validated_mapping_after_its_initial_lease_expire
         ("attribute_only", True),
         ("partial_attributes", False),
         ("partial_attributes", True),
+        ("self_fk", False),
         ("empty", False),
         ("empty", True),
     ],
@@ -270,6 +272,7 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
         "object_only",
         "attribute_only",
         "partial_attributes",
+        "self_fk",
         "empty",
     }
     if bulk != "single":
@@ -305,6 +308,33 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
                 ),
                 (project_id, entity_type),
             )
+            if bulk == "self_fk":
+                # A nullable FK and the referenced key are distinct fields on the same Entity.
+                connection.execute(
+                    """
+                    WITH parent_key AS (
+                        UPDATE workflow.logical_attribute a
+                        SET logical_attribute_is_natural_key=TRUE,
+                            logical_attribute_is_nullable=FALSE
+                        FROM workflow.logical_entity e
+                        WHERE a.logical_entity_id=e.logical_entity_id AND e.project_id=%s
+                          AND e.logical_entity_name='SecondCustomer'
+                          AND a.logical_attribute_name='customer_id'
+                        RETURNING a.project_id,a.logical_entity_id,a.logical_attribute_id
+                    )
+                    INSERT INTO workflow.logical_relationship(
+                        project_id,logical_relationship_from_entity_id,
+                        logical_relationship_from_attribute_id,logical_relationship_to_entity_id,
+                        logical_relationship_to_attribute_id,logical_relationship_basis)
+                    SELECT pk.project_id,pk.logical_entity_id,fk.logical_attribute_id,
+                           pk.logical_entity_id,pk.logical_attribute_id,'Synthetic hierarchy.'
+                    FROM parent_key pk
+                    JOIN workflow.logical_attribute fk USING(logical_entity_id,project_id)
+                    WHERE fk.logical_attribute_name='fixture_10'
+                      AND fk.logical_attribute_is_nullable
+                    """,
+                    (project_id,),
+                )
     if bulk == "multi_system" or partial_shape:
         _add_mapping_system(fixture, scope)
     with fixture.connect_owner() as connection:
@@ -370,11 +400,20 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
                         "object_only": 20,
                         "attribute_only": 0,
                         "partial_attributes": 10,
+                        "self_fk": 2,
                     }[bulk]
                     assert (
                         sum(row["transformation"] is None for row in attributes)
                         == expected_blank_count
                     )
+                    if bulk == "self_fk":
+                        sources = cast(list[dict[str, JsonValue]], values["source_metadata"])
+                        assert any(
+                            isinstance(row["object"], dict)
+                            and row["object"]["object_schema"] == "source"
+                            and row["object"]["object_name"] == "orders"
+                            for row in sources
+                        )
             else:
                 evidence = cast(list[dict[str, JsonValue]], values["mapping_evidence"])
                 assert evidence
@@ -382,6 +421,25 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
                 assert any(row["modeled_entity_name"] == "SecondCustomer" for row in evidence) == (
                     bulk != "empty"
                 )
+                if bulk == "self_fk":
+                    target_evidence = next(
+                        row["context"]
+                        for row in evidence
+                        if row["modeled_entity_name"] == "SecondCustomer"
+                    )
+                    assert isinstance(target_evidence, dict)
+                    rules = cast(
+                        list[dict[str, JsonValue]], target_evidence["attribute_transformations"]
+                    )
+                    assert {
+                        str(row["target_attribute_name"])
+                        for row in rules
+                        if row["transformation"] is None
+                    } == {"fixture_10"}
+                    assert any(
+                        row["target_attribute_name"] == "customer_id" and row["transformation"]
+                        for row in rules
+                    )
         if request.workflow == "mapping":
             mapping_calls += 1
             if bulk == "partial" and mapping_calls == 1:
@@ -406,14 +464,16 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
                         if row["source_system_code"] == system["system_code"]
                         and row["transformation"] is None
                     }
+                    mapped_value = "driver.customer_id" if bulk == "self_fk" else "1"
                     expressions = [
-                        f"CAST({'NULL' if field['attribute_name'] in missing else '1'} "
+                        f"CAST({'NULL' if field['attribute_name'] in missing else mapped_value} "
                         f"AS {field['attribute_data_type']}) AS `{field['attribute_name']}`"
                         for field in fields
                         if field.get("is_active", True)
                         and field.get("population") not in {"database", "framework"}
                     ]
-                    selects.append("SELECT " + ", ".join(expressions))
+                    driver = " FROM source.orders AS driver" if bulk == "self_fk" else ""
+                    selects.append("SELECT " + ", ".join(expressions) + driver)
                 candidate = cast(dict[str, JsonValue], result.candidate)
                 artifacts = cast(list[dict[str, JsonValue]], candidate["artifacts"])
                 result = result.model_copy(
@@ -738,6 +798,7 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
                             "object_only": 0,
                             "attribute_only": 10,
                             "partial_attributes": 5,
+                            "self_fk": 9,
                         }[bulk]
                     )
                 incomplete = [
@@ -844,7 +905,22 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
                     for position in range(2, 11)
                 )
                 assert ("CAST(NULL AS bigint)" in row["generated_code_content"]) == (
-                    bulk in {"object_only", "partial_attributes"}
+                    bulk in {"object_only", "partial_attributes", "self_fk"}
+                )
+            if bulk == "self_fk":
+                # Execute the review artifact's SELECT on two in-memory fixture rows.
+                with sqlite3.connect(":memory:") as local:
+                    local.executescript(
+                        "ATTACH DATABASE ':memory:' AS source;"
+                        "CREATE TABLE source.orders(customer_id INTEGER);"
+                        "INSERT INTO source.orders VALUES (17),(29);"
+                    )
+                    local.row_factory = sqlite3.Row
+                    rows = local.execute(partial_code[0]["generated_code_content"]).fetchall()
+                assert sorted(row["customer_id"] for row in rows) == [17, 17, 29, 29]
+                assert all(
+                    row["fixture_2"] == row["customer_id"] and row["fixture_10"] is None
+                    for row in rows
                 )
         if bulk == "partial":
             assert (

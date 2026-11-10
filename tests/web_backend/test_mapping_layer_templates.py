@@ -10,6 +10,7 @@ from atlas_platform.features.mapping.complete_candidate import (
 from atlas_platform.features.mapping.preparation_contracts import ModeledEntityType
 from atlas_platform.features.mapping.readiness import assess_mapping_readiness
 from atlas_platform.features.workflows.authoring.context_inputs import OBJECT_FIELDS
+from atlas_platform.features.workflows.authoring.downstream_inputs import downstream_input_contracts
 from mapping_fixtures import mapping_candidate, mapping_preparation
 
 
@@ -30,6 +31,21 @@ async def test_default_source_fields_preserve_integrity(
     layer: ModeledEntityType, case: str
 ) -> None:
     preparation = mapping_preparation(modeled_entity_type=layer)
+    frozen = preparation.model_dump(mode="json")
+    template = {
+        **downstream_input_contracts("mapping")["object_output_template"][2],
+        "output_template_id": 901,
+        "code": f"mapping_{layer.removesuffix('_entity')}_object_default_v2",
+        "modeled_entity_type": layer,
+        "schema_digest": "a" * 64,
+        "schema_digest_is_valid": True,
+    }
+    for scope in ("plan", "context"):
+        frozen[scope]["output_template_selections"]["mapping_object"] = {
+            "output_template_id": 901, "schema_digest": "a" * 64,
+        }
+    frozen["context"]["output_templates"] = {"ids": [901], "definitions": [template]}
+    preparation = type(preparation).model_validate(frozen, strict=False)
     source = preparation.context.sources[0].object.model_dump(mode="json")
     keys = (
         OBJECT_FIELDS

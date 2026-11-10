@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Any, Literal, Self, cast
 
 from atlas_mcp.domain.errors import InvalidRequestError
@@ -20,6 +21,8 @@ from sqlglot.errors import ErrorLevel, ParseError
 from sqlglot.expressions.ddl import DDL, Command, Set, Transaction, Use
 from sqlglot.expressions.dml import DML
 from sqlglot.expressions.query import Query
+from sqlglot.optimizer.normalize_identifiers import normalize_identifiers
+from sqlglot.optimizer.scope import Scope, traverse_scope
 
 from atlas_platform.features.workflows.authoring.repair import (
     AgentCandidateValidation,
@@ -210,9 +213,9 @@ class CodeGenerationCandidateValidator:
                             message=(
                                 "Use only read-only queries and unqualified temporary views. "
                                 "Transformations finish with one explicit-column SELECT. "
-                                "Use schema.table and 'WID_GDSBatchID' only on registered "
-                                "batch columns. Get SystemID by LEFT JOIN meta.system on "
-                                "SystemCode alone. "
+                                "Filter a batched driver with its registered batch column = "
+                                "'wid_gdsbatchid'. Never select the latest source batch. "
+                                "Use schema.table and LEFT JOIN meta.system on SystemCode alone. "
                                 "Catalog qualifiers and SQL parameter bindings "
                                 "are unsupported. "
                                 "No persistent DDL, DML, commands, SELECT * or comments."
@@ -445,7 +448,6 @@ def _is_generation_sql(
         relations = tuple(statement.find_all(exp.Table))
         if not _valid_runtime_references(
             statement,
-            value,
             target,
             final_projection=transformation and statement is statements[-1],
         ):
@@ -472,6 +474,8 @@ def _is_generation_sql(
         for node in statement.walk()
     ):
         return False
+    if not _valid_batch_queries(statements, value, target, transformation=transformation):
+        return False
     return not any(
         isinstance(column, exp.Star) or isinstance(column, exp.Column) and column.is_star
         for statement in statements
@@ -482,9 +486,9 @@ def _is_generation_sql(
 
 
 def _valid_runtime_references(
-    statement: exp.Expr, sql: str, target: CodeGenerationTargetReference, *, final_projection: bool
+    statement: exp.Expr, target: CodeGenerationTargetReference, *, final_projection: bool
 ) -> bool:
-    """Check registry joins, literal provenance and explicitly bound batch predicates."""
+    """Check registry joins and literal provenance."""
     for table in statement.find_all(exp.Table):
         if (table.db.casefold(), table.name.casefold()) != ("meta", "system"):
             continue
@@ -565,46 +569,291 @@ def _valid_runtime_references(
             ):
                 return False
 
-    if any(col.name.casefold() == "wid_gdsbatchid" for col in statement.find_all(exp.Column)):
-        return False
-    registered: dict[tuple[str, str], set[str | None]] = {}
-    for schema, table, column in target.batch_sources:
-        registered.setdefault((schema.casefold(), table.casefold()), set()).add(
-            column.casefold() if column else None
-        )
-    for token in statement.find_all(exp.Literal):
-        if not token.is_string or token.this.casefold() != "wid_gdsbatchid":
-            continue
-        if sql[token.meta["start"] : token.meta["end"] + 1] != "'WID_GDSBatchID'":
-            return False
-        parameter: exp.Expr = token
-        while isinstance(parameter.parent, (exp.Cast, exp.Paren)):
-            parameter = parameter.parent
-        comparison = parameter.parent
-        if not isinstance(comparison, exp.EQ):
-            return False
-        batch_column = (
-            comparison.this if parameter is comparison.expression else comparison.expression
-        )
-        while isinstance(batch_column, (exp.Cast, exp.Paren)):
-            batch_column = batch_column.this
-        if not isinstance(batch_column, exp.Column):
-            return False
-        # Check a directly named physical input against its own registration. A
-        # derived relation may project/rename the original batch column.
-        scope = comparison.find_ancestor(exp.Select)
-        if registered and scope is not None:
-            inputs = [
-                table
-                for table in scope.find_all(exp.Table)
-                if table.find_ancestor(exp.Select) is scope
-                and (
-                    not batch_column.table
-                    or table.alias_or_name.casefold() == batch_column.table.casefold()
-                )
-            ]
-            if len(inputs) == 1 and inputs[0].db:
-                key = (inputs[0].db.casefold(), inputs[0].name.casefold())
-                if key in registered and batch_column.name.casefold() not in registered[key]:
-                    return False
     return True
+
+
+@dataclass(frozen=True)
+class _BatchRowset:
+    # A direct projection of a registered batch column keeps its lineage across query stages.
+    batch_columns: frozenset[str] = frozenset()
+    driver_columns: frozenset[str] = frozenset()
+    needs_filter: bool = False
+    unknown_registration: bool = False
+    latest_columns: frozenset[str] = frozenset()
+
+
+def _batch_operand(value: exp.Expr) -> exp.Expr:
+    while isinstance(value, (exp.Cast, exp.Paren)):
+        value = value.this
+    return value
+
+
+def _valid_batch_queries(
+    statements: list[exp.Expr | None],
+    sql: str,
+    target: CodeGenerationTargetReference,
+    *,
+    transformation: bool,
+) -> bool:
+    registered: dict[tuple[str, str], set[str]] = {}
+    for schema, table, column in target.batch_sources:
+        names = registered.setdefault((schema.casefold(), table.casefold()), set())
+        if column:
+            names.add(column.casefold())
+
+    physical = {
+        key: _BatchRowset(frozenset(columns), frozenset(columns), bool(columns))
+        for key, columns in registered.items()
+    }
+    views: dict[str, _BatchRowset] = {}
+    for statement in statements:
+        assert statement is not None
+        token_comparisons: dict[int, exp.Column] = {}
+        for token in statement.find_all(exp.Literal):
+            if not token.is_string or token.this.casefold() != "wid_gdsbatchid":
+                continue
+            if sql[token.meta["start"] : token.meta["end"] + 1] != "'wid_gdsbatchid'":
+                return False
+            operand: exp.Expr = token
+            while isinstance(operand.parent, (exp.Cast, exp.Paren)):
+                operand = operand.parent
+            equality = operand.parent
+            if not isinstance(equality, exp.EQ):
+                return False
+            other = equality.this if operand is equality.expression else equality.expression
+            column = _batch_operand(other)
+            if not isinstance(column, exp.Column):
+                return False
+            token_comparisons[id(equality)] = column
+        if any(c.name.casefold() == "wid_gdsbatchid" for c in statement.find_all(exp.Column)):
+            return False
+        if not registered:
+            continue  # Older snapshots do not declare which physical sources are batched.
+
+        query = statement.expression if isinstance(statement, exp.Create) else statement
+        result = _query_batch_rowset(query, physical, views, token_comparisons)
+        if result is None:
+            return False
+        if isinstance(statement, exp.Create):
+            views[statement.this.name.casefold()] = result
+        elif transformation and result.needs_filter:
+            return False
+    return True
+
+
+def _query_batch_rowset(
+    query: exp.Expr,
+    physical: dict[tuple[str, str], _BatchRowset],
+    views: dict[str, _BatchRowset],
+    token_comparisons: dict[int, exp.Column],
+) -> _BatchRowset | None:
+    """Trace the driving FROM and registered batch columns through each SELECT."""
+    unknown = _BatchRowset(unknown_registration=True)
+    # Databricks resolves table aliases and CTE names without regard to case.
+    scopes = traverse_scope(normalize_identifiers(query.unnest(), dialect="databricks"))
+    outputs: dict[Scope, _BatchRowset] = {}
+    # references includes the right side of SEMI/ANTI joins; their ON
+    # conditions can also compare a batch to a derived maximum.
+    sources = {
+        scope: {name: scope.sources[name] for name, _ in scope.references if name in scope.sources}
+        for scope in scopes
+    }
+
+    def rowset(source: exp.Table | Scope | None) -> _BatchRowset:
+        if isinstance(source, Scope):
+            return outputs.get(source, unknown)
+        if isinstance(source, exp.Table):
+            if source.db:
+                return physical.get((source.db.casefold(), source.name.casefold()), unknown)
+            return views.get(source.name.casefold(), unknown)
+        return unknown
+
+    def column_sources(scope: Scope, column: exp.Column) -> list[tuple[str, _BatchRowset]]:
+        current: Scope | None = scope
+        while current is not None:
+            inputs = sources[current]
+            if column.table in inputs:
+                return [(column.table, rowset(inputs[column.table]))]
+            if not column.table and inputs:
+                return [(alias, rowset(source)) for alias, source in inputs.items()]
+            if not current.can_be_correlated:
+                break
+            current = current.parent
+        return []
+
+    def output_names(scope: Scope) -> list[str]:
+        # SQLGlot carries a CTE's explicit column list into each UNION branch.
+        projections = cast(exp.Selectable, scope.expression).selects
+        return [
+            scope.outer_columns[pos] if pos < len(scope.outer_columns) else output.alias_or_name
+            for pos, output in enumerate(projections)
+        ]
+
+    for scope in scopes:
+        select = scope.expression
+        if isinstance(select, exp.SetOperation):
+            # UNION matches columns by position, including renamed CTE outputs.
+            branches = [(output_names(branch), outputs[branch]) for branch in scope.union_scopes]
+            batch_names: set[str] = set()
+            driver_names: set[str] = set()
+            latest_names: set[str] = set()
+            for pos, name in enumerate(output_names(scope)):
+                if any(pos >= len(names) for names, _ in branches):
+                    return None
+                if any(names[pos] in flow.batch_columns for names, flow in branches):
+                    batch_names.add(name)
+                if any(names[pos] in flow.latest_columns for names, flow in branches):
+                    latest_names.add(name)
+                if all(names[pos] in flow.driver_columns for names, flow in branches):
+                    driver_names.add(name)
+            outputs[scope] = _BatchRowset(
+                frozenset(batch_names),
+                frozenset(driver_names),
+                any(flow.needs_filter for _, flow in branches),
+                any(flow.unknown_registration for _, flow in branches),
+                frozenset(latest_names),
+            )
+            continue
+        if not isinstance(select, exp.Select):
+            outputs[scope] = unknown
+            continue
+
+        driver = select.args.get("from_")
+        alias = driver.this.alias_or_name if isinstance(driver, exp.From) else ""
+        driver_flow = rowset(sources[scope].get(alias))
+        needs_filter = driver_flow.needs_filter
+        batch_names = set()
+        driver_names = set()
+        projections = {
+            id(output): name
+            for output, name in zip(select.selects, output_names(scope), strict=True)
+        }
+        for output in select.selects:
+            column = _batch_operand(output.unalias())
+            if not isinstance(column, exp.Column):
+                continue
+            name = projections[id(output)]
+            for source_alias, flow in column_sources(scope, column):
+                if column.name in flow.batch_columns:
+                    batch_names.add(name)
+                if source_alias == alias and column.name in flow.driver_columns:
+                    driver_names.add(name)
+
+        predicates: list[exp.Expr] = []
+        where = select.args.get("where")
+        if isinstance(where, exp.Where):
+            predicates.append(where.this)
+        for join in scope.find_all(exp.Join):
+            on = join.args.get("on")
+            if not join.side and join.kind in {"", "INNER"} and isinstance(on, exp.Expr):
+                predicates.append(on)
+        mandatory: set[int] = set()
+        while predicates:
+            term = predicates.pop().unnest()
+            if isinstance(term, exp.And):
+                predicates.extend((term.this, term.expression))
+            else:
+                if isinstance(term, exp.Boolean) and not term.this:
+                    needs_filter = False  # The documented zero-row placeholder.
+                mandatory.add(id(term))
+
+        for equality in scope.find_all(exp.EQ):
+            compared = token_comparisons.get(id(equality))
+            runtime_token = compared is not None
+            if compared is None:
+                if id(equality) not in mandatory:
+                    continue
+                column, literal = _batch_operand(equality.this), _batch_operand(equality.expression)
+                if isinstance(literal, exp.Column):
+                    column, literal = literal, column
+                if isinstance(literal, exp.Neg):
+                    literal = literal.this
+                if not isinstance(column, exp.Column) or not isinstance(literal, exp.Literal):
+                    continue
+                compared = column
+            bindings = column_sources(scope, compared)
+            if (
+                runtime_token
+                and bindings
+                and not any(
+                    compared.name in flow.batch_columns or flow.unknown_registration
+                    for _, flow in bindings
+                )
+            ):
+                return None
+            if id(equality) in mandatory and any(
+                source_alias == alias and compared.name in flow.driver_columns
+                for source_alias, flow in bindings
+            ):
+                if not runtime_token:
+                    return None  # A fixed second batch would exclude other requested runs.
+                needs_filter = False
+
+        # Track a batch maximum or rank as an ordinary projected value until
+        # it is used to select rows. A diagnostic MAX in the output is valid.
+        latest_values: list[exp.Expr] = [
+            child.expression for child in scope.subquery_scopes if outputs[child].latest_columns
+        ]
+        for column in scope.find_all(exp.Column):
+            if any(column.name in flow.latest_columns for _, flow in column_sources(scope, column)):
+                latest_values.append(column)
+
+        selectors: list[tuple[exp.Expr, exp.Expr]] = [
+            (node.this, node) for node in scope.find_all(exp.Max, exp.Min)
+        ]
+        for window in scope.find_all(exp.Window):
+            if isinstance(window.this, (exp.Rank, exp.DenseRank, exp.RowNumber)) and (
+                order := window.args.get("order")
+            ):
+                selectors.extend((item.this, window) for item in order.expressions)
+        if select.args.get("limit") and (order := select.args.get("order")):
+            selectors.append((order.expressions[0].this, order))
+        for operand, marker in selectors:
+            # DISTINCT and scalar expressions such as COALESCE may wrap the
+            # value being maximized. Nested queries resolve their own columns.
+            for node in operand.walk(prune=lambda n: isinstance(n, (exp.Query, exp.Predicate))):
+                if isinstance(node, exp.Column) and (
+                    any(node.name in flow.batch_columns for _, flow in column_sources(scope, node))
+                    or (
+                        not node.table
+                        and node.name in batch_names
+                        and isinstance(operand.parent, exp.Ordered)
+                    )
+                ):
+                    latest_values.append(marker)
+                    break
+
+        latest_names = set()
+        for value in latest_values:
+            cursor: exp.Expr | None = value
+            while cursor is not None and cursor is not select:
+                if id(cursor) in projections:
+                    latest_names.add(projections[id(cursor)])
+                    break
+                if isinstance(cursor, (exp.Where, exp.Having, exp.Qualify, exp.Join)) or (
+                    isinstance(cursor, exp.Order) and select.args.get("limit")
+                ):
+                    return None
+                cursor = cursor.parent
+        # Databricks also permits HAVING, QUALIFY and ORDER BY to reference
+        # an aggregate or window output by its alias in the same SELECT.
+        for clause in ("having", "qualify", "order"):
+            condition = select.args.get(clause)
+            if (
+                isinstance(condition, exp.Expr)
+                and (clause != "order" or select.args.get("limit"))
+                and any(
+                    not col.table and col.name in latest_names
+                    for col in condition.find_all(exp.Column)
+                )
+            ):
+                return None
+
+        outputs[scope] = _BatchRowset(
+            frozenset(batch_names),
+            frozenset(driver_names),
+            needs_filter,
+            any(rowset(source).unknown_registration for source in sources[scope].values()),
+            frozenset(latest_names),
+        )
+    return outputs[scopes[-1]] if scopes else unknown
