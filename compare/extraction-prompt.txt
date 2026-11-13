@@ -1,0 +1,592 @@
+Atlas model comparison prompt
+Draft 0.8 — extraction, explicit matching and overview-first results
+
+Prepare comparable CSV extracts for the reference data model (existing code and
+metadata) and the Atlas data model (snapshots/downloads). Extract independently,
+preserving each model's names.
+Follow the extraction and calculation steps below. Present an overview first.
+Create detailed KPI reports only when the user asks for them. Do not invent
+missing metadata, semantic correspondence, evaluation decisions or scores.
+
+1. Scope and inputs
+
+Ask: "Compare Silver only, Gold only, or both?" Use an existing answer.
+Ask only for missing inputs:
+- Bronze schema names.
+- Silver schema names.
+- Gold schema names.
+- Reference Silver code location.
+- Reference Gold code location.
+- Reference data model metadata location, if available.
+- Atlas snapshot/download location(s).
+- Parent directory in which to create compare/.
+
+Use the supplied schemas to classify referenced tables. Flag unresolved zones.
+Gold-only extraction may require upstream Silver code/metadata to resolve
+Bronze dependencies; this does not add Silver targets to the selected scope.
+Read inputs without executing code or SQL. Check required paths are readable.
+Identify input versions/revisions where available. Request missing dependencies
+that prevent extraction; distinguish unavailable evidence from absent content.
+
+2. Exact output layout
+
+compare/
+  extraction-prompt.txt
+  kpi-definitions.txt
+  reference/
+    entities.csv
+    bronze_relationships.csv
+    silver_relationships.csv
+    gold_relationships.csv
+    object_mappings.csv
+    attribute_mappings.csv
+  atlas/
+    entities.csv
+    bronze_relationships.csv
+    silver_relationships.csv
+    gold_relationships.csv
+    object_mappings.csv
+    attribute_mappings.csv
+  results/
+    summary.md
+    scores.csv
+    extraction_notes.md
+
+Create only the selected Silver/Gold relationship files. Bronze relationships
+are included for either selection. Mapping files contain only selected targets.
+The entity inventory contains every selected target entity, including those
+with no source mappings. There is no separate attributes.csv.
+Do not overwrite a previous extraction; request a fresh parent directory if
+result files already exist. The maintained prompt itself can remain in place.
+On a later detail request, reuse this run and add only the requested detail file;
+do not repeat extraction or overwrite its scores. Section 12 defines these files.
+
+3. CSV conventions
+
+- UTF-8, comma delimiter, one header row, standard CSV quoting.
+- Identical filenames and headers for reference and Atlas.
+- One atomic link per relationship/mapping row. entities.csv uses the explicitly
+  defined pipe-separated natural_keys field below.
+- Remove exact duplicate rows; sort by the listed columns in header order.
+- Preserve identifier spelling and case. Resolve aliases to actual names.
+- Retain headers when an applicable extract has zero rows; explain whether
+  it is complete-and-empty or unavailable/incomplete in extraction_notes.md.
+- Do not fabricate names or use blank endpoints for unresolved links.
+- Schema/table coordinates must identify objects uniquely. When schemas repeat
+  across systems/catalogs, agree on a shared qualified schema convention before
+  extraction, such as catalog.schema. Do not silently merge distinct objects.
+
+4. Relationship files
+
+All three relationship files use this exact header:
+from_schema_name,from_table_name,from_column_name,to_schema_name,to_table_name,to_column_name
+
+One row represents a unique unordered link between two columns within the named
+zone. In this minimal format, from/to label endpoints; they do not assert
+foreign-key direction. Deduplicate separately in each model's relationship file:
+- Resolve aliases to actual names before comparing endpoints.
+- Build each endpoint as a (schema, table, column) tuple.
+- Put the lexicographically smaller tuple in from_* using case-sensitive order.
+- Remove identical six-column rows after ordering the endpoints.
+Thus A -> B and B -> A must produce exactly one row, even if found in multiple
+files or queries. Keep the evidence locations for that single link in the notes.
+Do not merge links whose endpoint columns differ. For BRR, repeat endpoint ordering
+and deduplication after accepted physical-alias resolution, before freezing its
+reference count. Modeled split/merge correspondence must not collapse distinct
+reference requirements.
+
+Reference evidence:
+- Bronze: column-to-column equality predicates in joins from the relevant code,
+  including WHERE-style joins. Resolve aliases and passthrough CTE/view columns.
+- Silver/Gold: model relationships established by metadata, same-zone equality
+  joins, or explicit key-lookup assignments that connect a target foreign-key
+  column to a modeled parent key. Resolve both endpoints to the target model.
+  Metadata declarations and code evidence remain distinct in the notes. Shared
+  source columns alone do not establish relationships between target tables.
+
+Atlas evidence:
+- Bronze: saved Analysis results between scoped Bronze columns.
+- Silver: Logical Model relationships.
+- Gold: Dimensional Model relationships.
+- Use active records from one identified snapshot/project revision.
+- Do not replace absent Analysis relationships with joins inferred from Mapping.
+- Flag Analysis kinds that do not represent comparable column links.
+
+Determine relevant Bronze tables from the selected reference code and Atlas
+model source dependencies, including necessary upstream dependencies. Record
+their union as the common Bronze scope. Include all Analysis links whose two
+endpoints are in this scope, not just links already observed in reference code.
+
+Keep one row per equality column pair in composite predicates. Do not convert
+range joins or expressions such as TRIM(a.id) = b.id into plain equality links;
+record unsupported cases and their locations in the notes. Conditional/OR
+predicate context is also retained in notes, not encoded as a full constraint.
+
+These six columns support column-link recall/overlap only. They do not encode
+composite constraint grouping, cardinality, optionality, join type or direction.
+Do not describe their score as complete relationship correctness.
+
+5. Object mappings
+
+Filename: object_mappings.csv
+Exact header:
+target_schema_name,target_table_name,source_schema_name,source_table_name
+
+One row per distinct source-table contribution to a target table. Include
+tables supplying values, lookups, joins or filters affecting target output.
+Several sources feeding one target produce several rows. A source feeding
+several targets also produces several rows. This one file supports review
+by either target or source; do not create a second reversed copy.
+
+6. Attribute mappings
+
+Filename: attribute_mappings.csv
+Exact header:
+target_schema_name,target_table_name,target_column_name,source_schema_name,source_table_name,source_column_name
+
+One row per source column contributing to a target value. For amount = price *
+quantity, emit two rows, one for price and one for quantity. Include value,
+CASE-condition and window dependencies when they affect the resulting value.
+Join/filter-only dependencies belong to object mappings, not every target
+attribute. Keep the distinction consistent across both extracts.
+Constants and framework-generated values with no source column produce no
+attribute link. List these targets in notes so they are not treated as missing.
+COUNT(*) contributes object lineage but has no particular source-column link.
+Every attribute mapping must have its corresponding object mapping.
+
+For both mapping files:
+- Mappings are directed source-to-target dependencies. Never swap their endpoints
+  to deduplicate them; only identical rows are duplicates.
+- Capture direct dependencies between actual model/physical tables. Collapse
+  code-only CTEs and temporary stages, retaining real Bronze/Silver/Gold inputs.
+- Usually Silver consumes Bronze and Gold consumes Silver. Preserve actual
+  exceptions and same-zone lookups; never fabricate an intermediate mapping.
+- Keep direct and end-to-end lineage separate. Later comparison may compose
+  paths under results/; do not mix composed paths into these direct extracts.
+- Reference: use code plus metadata to resolve inputs, outputs and expressions.
+- Atlas: use model source references and Mapping records. Context references
+  are supporting evidence, not physical source edges. Source support alone
+  does not prove a value or rowset dependency; flag unresolved contributions.
+- Parse Mapping according to its template. Flag opaque/unresolved documents.
+- These files capture dependencies, not transformation equivalence.
+
+7. Entity inventory
+
+Filename: entities.csv
+Exact header:
+schema_name,table_name,natural_keys,grain_description
+
+One row per selected target entity. Grain describes what one row represents,
+including time/version meaning where relevant. Use explicit metadata or reviewed
+code evidence. Use UNKNOWN when the business grain cannot be established; a
+primary key or GROUP BY alone is not sufficient evidence. Preserve evidence and
+uncertainty in the notes. For Atlas, use the respective Logical/Dimensional Entity
+grain fields; missing definitions remain UNKNOWN.
+
+natural_keys contains the exact names of columns explicitly marked as natural/
+business keys, separated by |, for example order_id|source_system_id. Remove
+duplicate names and sort case-sensitively. Do not include surrounding spaces.
+Escape a literal backslash as \\ and a literal pipe within a name as \|.
+Use an empty cell only when complete metadata explicitly indicates no natural
+keys. Use UNKNOWN when designation/completeness cannot be established. If a
+column is literally named UNKNOWN, encode its name as \UNKNOWN to distinguish
+it from that status marker. Record partially known key columns in the notes.
+
+For reference models, use explicit natural/business-key metadata. For Atlas,
+collect modeled Attributes whose natural-key flag is true. Do not substitute
+source enrichment flags for target model flags. Do not infer natural-key status
+solely from names, primary keys, joins or GROUP BY. Preserve conflicting or
+inferred declarations in the notes.
+
+Natural-key flags are evidence about business identity, not measured uniqueness.
+Atlas flags identify columns, not separately grouped alternative candidate keys.
+Do not assume each flagged column is independently unique or invent composite
+key groups. Preserve explicitly documented groups and identity scope in notes.
+Natural keys may identify an entity across several historical versions; keep
+business identity and physical row grain distinct.
+
+8. Match reference and Atlas objects, then freeze decisions
+
+Write results/extraction_notes.md as a reproducibility record, not a detailed
+KPI report. Record selection, zone/schema rules, common Bronze table scope,
+input locations and digests, snapshot/project revision, contract/tool versions,
+extraction completeness, evidence locations and material uncertainties. Record
+known-empty versus unavailable CSVs separately. Keep references and short
+findings, not raw code, prompts or physical data. Note manual CSV edits/reasons.
+
+Keep these compact decision tables in that same file when needed:
+- Physical aliases: reference endpoint, Atlas endpoint, decision, evidence.
+- Entity correspondence: reference entity, Atlas entity/group, decision, evidence.
+- Column correspondence: reference column, Atlas column(s), decision, evidence.
+- Group dependency correspondence: KPI, reference dependency, Atlas dependency
+  or required dependency group, decision, evidence.
+- Grain decisions: reference entity, Atlas entity/group, grain decision, evidence.
+
+Correspondence decision values: accepted, absent, unresolved.
+Grain decision values: preserved, not_preserved, unknown.
+Accepted entity, column and dependency groups must be nonempty and list their
+required members explicitly. All listed members are required, not alternatives.
+If several alternatives are valid, freeze one reviewed choice before counting.
+Allow one consistent decision per scoped reference item. Conflicting decisions
+are unresolved; never choose the decision giving the higher score.
+Accepted/absent and preserved/not_preserved decisions require documented review
+of evidence; reuse already reviewed decisions. Record the reviewer and date.
+The agent may perform this evidence review; human approval is not mandatory for
+every match. Identify the actual reviewer and rule used. Do not invent approval
+or evidence. Previously supplied, reviewed correspondence may be reused only
+after checking that its scope and supporting inputs still apply.
+Reuse decisions only for the input versions/digests and scope they cover. A
+different Atlas run or changed input requires review of affected decisions.
+Do not treat a proposed match as accepted. Where a semantic decision is needed
+and has not been reviewed, use unresolved/unknown; report what can be established
+without blocking the overview for a blanket approval request.
+
+Matching means correspondence of intended business meaning, not proof that Atlas
+implemented that meaning correctly. Keep the identity decision separate from
+differences in source dependencies, natural-key flags, grain, types or formulas.
+Otherwise matching would hide the very errors the KPIs are supposed to measure.
+The CSVs do not encode all business semantics. Inspect the supplied reference
+metadata/code and Atlas Entity/Attribute definitions, Mapping and Context evidence
+read-only when needed. Record precise source locations and short findings in
+the existing notes; do not add new default extract or matching-report files.
+
+Follow this matching procedure in order:
+
+8.1 Establish physical source identity
+- Match complete physical coordinates only within the same documented source
+  system/catalog/schema context. Same names in different systems are not equal.
+- An explicit metadata alias/crosswalk can establish equivalent coordinates.
+  Validate it against the supplied inputs before accepting it.
+- Resolve SQL aliases and passthrough CTEs to their actual inputs. Do not infer
+  source equivalence merely because table/column names look similar.
+- Rule label: physical_identity. Unresolved source identity stays unresolved.
+
+8.2 Establish the candidate scope
+- Match Silver targets against Silver and Gold against Gold. Read upstream Silver
+  correspondence needed for Gold dependencies without adding Silver score rows.
+- Process reference entities, then their columns, in case-sensitive qualified
+  name order. Search all in-scope Atlas entities; sorting determines inspection
+  order, not which candidate wins.
+- Use definitions/business role, object sources, key-source lineage, attributes
+  and relationship role to locate candidates. Names, grain and key flags are
+  clues only. No similarity percentages, top-K cutoff or minimum-overlap rule.
+- Where source layers differ, trace explicit mapping paths to the shared Bronze
+  boundary for candidate evidence only. Do not add composed edges to the direct
+  mapping CSVs or silently change OLR/ALR comparison boundaries.
+- A low-overlap candidate must not be discarded solely for low overlap. When
+  evidence is incomplete, do not claim that the candidate search proves absence.
+
+8.3 Match tables by intended business concept and role
+- First validate any supplied explicit crosswalk or shared canonical business
+  identifier. It must establish this correspondence, not just share a physical
+  source or an internal Atlas record ID. Rule label: explicit_crosswalk.
+- Otherwise review definitions/context and supporting code or source/key lineage
+  to establish the same business subject/event and role. Record a meaning claim
+  for each side and the evidence connecting them. Rule label: entity_meaning.
+- Accept only a uniquely supported entity or explicitly defined entity group.
+  A name match, common source table or common natural key alone is not enough.
+- Do not require every key component, source table, attribute or grain to agree.
+  If the intended business concept corresponds, accept the correspondence and
+  record implementation differences for the relevant KPI or limitation note.
+- If two candidates remain plausible, leave the item unresolved. Do not choose
+  the candidate yielding the highest score or use alphabetical order as a tie
+  breaker. Do not force a global one-to-one table assignment.
+
+8.4 Match columns within accepted table representations
+- Inspect all relevant columns in the accepted Atlas entity/group, including
+  metadata columns absent from source mappings. Do not fabricate a column list
+  from mapping rows alone; use the supplied metadata/snapshot where necessary.
+- Use an explicit reviewed field crosswalk, or establish the same intended
+  business property and role from definitions, requirements and code evidence.
+  Rule labels: explicit_crosswalk or column_meaning.
+- Distinguish identifiers, business quantities, units/currency, sign, time meaning
+  and aggregation intent where relevant. Billing customer and shipping customer
+  are separate roles even if both ultimately reference the customer table.
+- Source-column lineage supports the review but is not a mandatory equality
+  condition. The same input may support different meanings: SUM(amount) and
+  AVG(amount) are not equivalent just because both read amount.
+- Conversely, if both fields independently and explicitly intend net revenue,
+  align them even if Atlas incorrectly reads gross_amount. ALR can then expose
+  the dependency difference. Record incorrect formulas separately; ALR does not
+  measure expression correctness.
+- Changed types, key flags or implementation units/formulas do not automatically
+  prevent an intended-field correspondence. Different intended meanings do.
+- Accept a uniquely supported field or an explicit required field group. If the
+  intended role cannot be established or several interpretations remain valid,
+  leave it unresolved. No source-overlap threshold or fuzzy-name auto-match.
+
+8.5 Handle split and merged structures explicitly
+- One reference table may map to several Atlas tables, and several reference
+  tables may each map to one Atlas table. Assess every reference concept separately.
+- Record the exact required members and, when needed, how the reference concept
+  is represented: projection, join, union, discriminator filter, aggregation or
+  version selection. Record actual endpoint columns and supporting evidence.
+  Rule label: explicit_group.
+- Example: reference Customer plus CustomerAddress may correspond to Atlas
+  CustomerProfile if evidence establishes both concepts there. It is not enough
+  that the tables share customer_id or happen to connect in a graph.
+- Do not invent joins, filters, columns or keys to make reconstruction work.
+  Record intended correspondence separately from whether required detail,
+  multiplicity, optional rows and historical versions are actually preserved.
+- Entity-group acceptance gives ERC representation credit only. For OLR/ALR,
+  review each reference dependency's specific Atlas link or required link group
+  separately. No arbitrary group cross-products or graph reachability credit.
+- For NKC, record the required Atlas key-column counterparts. For GPC, separately
+  review row meaning and reconstruction multiplicity/history. Missing evidence
+  means unknown grain preservation even when entity correspondence is accepted.
+
+8.6 Decide accepted, absent or unresolved
+- accepted: one correspondence or explicit required group is supported by the
+  rules above and has no unresolved conflict about intended identity.
+- absent: the relevant Atlas inventory and candidate search are complete, and
+  evidence establishes that no representation exists. Record scope and the
+  reason plausible candidates do not represent this item. A failed name search
+  or a missing mapping row alone cannot establish absence.
+- unresolved: insufficient evidence, ambiguous role, conflicting viable matches,
+  incomplete search or unreviewed grouping. Record the exact unresolved question.
+- Keep known implementation differences alongside accepted identity decisions.
+  Do not downgrade identity to unresolved solely to avoid a low KPI score.
+- Reuse an Atlas table/column across reference items only where each intended
+  concept/property is supported. Duplicate same-named fields or repeated source
+  lineage do not establish that reuse.
+
+8.7 Freeze before scoring
+- Store the accepted/absent/unresolved outcome, rule label, full reference/Atlas
+  coordinates or required group, supporting evidence, reviewer/date and input
+  versions in the existing decision tables in extraction_notes.md.
+- Store relevant implementation differences and separate dependency/grain
+  decisions. Pending alternative candidates are not accepted group members.
+- These frozen decisions make recalculation repeatable. Semantic interpretation
+  is not guaranteed by a prompt or by names alone; unresolved cases remain unknown.
+- Do not revise matching decisions during counting or while generating a later
+  detail report. Reviewed changes require a new scored run.
+
+Freeze the extracts and decisions before arithmetic. Record their versions/
+digests in the notes. Retain only the required evidence/decisions here; do not
+write per-KPI missing-item lists, matching dumps or hidden detail reports by
+default. Matching decisions can later be reviewed in response to a detail request.
+
+9. Shared calculation procedure
+
+Use deterministic local code for CSV parsing, deduplication, set membership,
+counts and arithmetic. Use section 8's frozen matching decisions. Do not estimate
+counts or percentages in prose. The procedure below is fixed; do not introduce
+weights, fuzzy similarity thresholds,
+extra KPIs, new definitions or automatic semantic matching rules.
+
+1. Read the frozen CSVs using a CSV parser. Validate exact headers and field
+   counts, required endpoints, selected target zones and duplicate handling.
+   Reject malformed required input for affected KPIs; record the problem.
+   After removing identical entity rows, require one row per (schema, table).
+   Differing rows for that same identity invalidate the affected entity input
+   until resolved; never choose one or count both. NKC/GPC count entities once.
+2. Preserve identifier spelling/case. Use tuple identifiers, not concatenated
+   dotted strings, as calculation keys. Apply only accepted physical aliases.
+   Recanonicalize and deduplicate Bronze pairs after physical aliasing. Apply
+   modeled correspondence later when assessing recovery; do not reverse directed
+   mapping links.
+3. Construct each reference set after physical identity normalization and
+   deduplication, but before modeled split/merge alignment. This fixes its
+   denominator. For BRR this is the post-alias pair set. Count each reference row
+   once; several Atlas matches cannot earn more than one unit. Do not collapse
+   separate reference requirements merely because one Atlas group covers them.
+4. Evaluate BRR once for Bronze. Evaluate OLR, ALR, ERC, NKC and GPC separately
+   for each selected target zone: Silver, Gold, or both. Gold-only work may read
+   upstream Silver evidence but must not add Silver score rows.
+5. Classify every applicable reference item as matched, gap or unknown:
+   matched = recovery supported by the fixed rules and reviewed evidence;
+   gap = confirmed absent, different or not preserved;
+   unknown = evidence/extraction/correspondence insufficient to decide.
+   A complete Atlas extract alone does not prove that a renamed item is absent.
+6. Unknown reference key/grain definitions cannot supply a requirement to test.
+   Count them in reference_unknown_count, outside reference_count. Known-empty
+   reference natural-key sets are not applicable; note their aggregate count.
+7. Calculate the counts and percentages only after item classifications are
+   established. Additional Atlas items never change denominators or add credit.
+   There is no overall score and no default Silver/Gold relationship KPI.
+
+10. Exact steps for each KPI
+
+BRR — Bronze Relationship Recall
+1. Load the two bronze_relationships.csv files. A reference item is one unordered
+   pair of (schema, table, column) endpoints.
+2. Resolve accepted physical aliases. Order each pair using the fixed endpoint
+   ordering and deduplicate within each model.
+3. For each reference pair: exact Atlas pair present -> matched. Pair absent with
+   complete relevant Analysis extraction and resolved identity -> gap. Otherwise
+   -> unknown. Unresolved aliases never become a guessed match or confirmed gap.
+4. reference_count is the number of distinct reference pairs. Score =
+   100 * matched_count / reference_count.
+
+OLR — Object-Lineage Recall
+1. Select object_mappings.csv rows whose target is in the selected zone.
+   A reference item is the full directed source-table -> target-table tuple.
+2. Resolve physical source identity or reviewed modeled-source correspondence,
+   and reviewed target-entity correspondence. Both sides must use the same direct
+   dependency boundary. Do not silently substitute composed end-to-end lineage.
+3. With accepted one-to-one endpoints, test for that exact Atlas dependency.
+   Presence -> matched. With complete relevant Mapping extraction, resolved
+   correspondence and no dependency -> gap. Reviewed absence of a required
+   endpoint also -> gap. Incomplete or ambiguous evidence -> unknown. A confirmed
+   missing requirement takes precedence over uncertainty about other endpoints.
+4. For split/merge endpoints, require a reviewed group dependency decision for
+   this reference link. All required Atlas links must exist -> matched; a confirmed
+   missing required link -> gap; otherwise -> unknown. Do not construct arbitrary
+   cross-products of entity groups or count graph reachability as a match.
+5. Count distinct reference table dependencies. Score =
+   100 * matched_count / reference_count.
+
+ALR — Attribute-Lineage Recall
+1. Select attribute_mappings.csv rows whose target is in the selected zone.
+   A reference item is the full directed source-column -> target-column tuple.
+2. Apply the OLR procedure at column level, using accepted column correspondence
+   and direct boundaries. Complex correspondence needs a reviewed dependency
+   decision for the specific reference link; do not infer expression equivalence.
+3. Classify each reference link using the same matched/gap/unknown rules. For
+   price and quantity feeding amount, assess the two links separately. Constants,
+   framework-generated values and COUNT(*) have no column link and are excluded.
+4. Count distinct reference column dependencies. Score =
+   100 * matched_count / reference_count.
+
+ERC — Entity Representation Coverage
+1. Select all entities.csv rows for the zone, including entities without mappings.
+   A reference item is one distinct reference (schema, table).
+2. Accepted entity/group correspondence, with all required Atlas entities present
+   -> matched. Reviewed absent representation -> gap. An accepted representation
+   with a confirmed missing required member -> gap. Unreviewed correspondence or
+   incomplete presence evidence -> unknown. Names alone never earn credit.
+3. Count each reference entity once, even when represented by several Atlas
+   tables. Multiple reference entities covered by one Atlas table are assessed
+   separately according to their reviewed correspondence.
+4. Score = 100 * matched_count / reference_count.
+
+NKC — Natural-Key Coverage
+1. Read natural_keys from each selected reference entity. Decode pipe escaping;
+   compare sets, not order. UNKNOWN -> reference_unknown_count. A known empty
+   set is not applicable. All known nonempty sets form reference_count.
+2. For each applicable reference entity, use its accepted Atlas representation
+   and reviewed key-column correspondence. Check each reference key component
+   maps to the required actual column(s) listed in natural_keys of that
+   representation. If one reference component maps to multiple required Atlas
+   columns, every required column must be present and marked natural. No empty
+   group or partial group earns credit. Source meaning/scope must agree.
+3. All reference key components confirmed retained as natural keys -> matched.
+   Any component confirmed absent or not annotated as natural -> gap, even if
+   another component is unknown. Otherwise -> unknown. Confirmed absent entity
+   representation -> gap. Unknown Atlas key declarations are never treated as
+   empty. Additional Atlas key components do not reduce this annotation score.
+4. Score = 100 * matched_count / reference_count. This is all-or-nothing per
+   entity, not partial credit per key column, and does not prove uniqueness.
+
+GPC — Grain Preservation Coverage
+1. Select reference entities with a known grain_description. UNKNOWN ->
+   reference_unknown_count; all known descriptions form reference_count.
+2. Verify each reference entity's accepted Atlas representation and required
+   members. Confirmed absent representation/member -> gap; unresolved presence
+   or correspondence -> unknown. Only with the required representation present,
+   use its frozen grain decision: preserved -> matched; not_preserved -> gap;
+   unknown or absent review -> unknown. Conflicting review decisions earn no credit.
+3. Do not compare description strings or infer grain from natural keys alone.
+   Review row meaning, detail and time/history meaning. A split/merge requires
+   evidence that the combined representation preserves multiplicity/history;
+   no approved decision means unknown, not a guessed equivalent grain.
+4. Score = 100 * matched_count / reference_count.
+
+11. Counts, statuses and verification
+
+reference_count = matched_count + gap_count + unknown_count.
+reference_unknown_count is separate. For BRR/OLR/ALR/ERC it is zero when the
+reference extract is complete; if missing reference units cannot be counted,
+leave it blank and explain incomplete reference coverage in the notes.
+
+Choose status in this order:
+1. Reference input unavailable/unreadable/invalid so the applicable set cannot
+   be built -> not_evaluated. Leave unavailable counts and score blank.
+2. Complete reference extraction with zero applicable items and no unknown
+   reference definitions -> not_applicable. Counts are zero; score is blank.
+3. Required Atlas evidence entirely unavailable/unreadable/invalid ->
+   not_evaluated. Preserve known reference counts; where all recovery is unknown,
+   matched_count=0, gap_count=0 and unknown_count=reference_count. Score is blank.
+4. Incomplete reference/relevant Atlas extraction, unresolved comparisons, or
+   unknown reference definitions -> provisional. If reference_count > 0, report
+   100 * matched_count / reference_count; otherwise leave score blank.
+5. Otherwise -> complete, including fully evidenced 0% or 100% outcomes.
+
+Round only the final percentage to two decimal places, using decimal rounding
+half up. Store no percent sign in CSV. Never divide by zero or substitute 100%
+for N/A. A provisional score covers only known reference requirements; unknown
+recovery makes it a lower bound. Missing known requirements are confirmed gaps;
+unknowns are not confirmed gaps. A rounded 100.00 is not proof every item matched:
+use integer counts to make that claim.
+
+Before reporting, assert nonnegative counts, the count equation whenever all
+terms are known, matched_count <= reference_count, and scores in [0,100]. Assert
+exactly one Bronze BRR row plus five rows per selected layer (6 or 11 total).
+Verify each credited match is supported by input records and accepted decisions.
+A high lineage score does not prove expressions correct; a high key score does
+not prove uniqueness. Do not invent pass/fail thresholds or aggregate KPIs.
+
+12. Results files and overview-first delivery
+
+Create only these default result files:
+
+results/summary.md
+- Selected scope and reference/Atlas versions in one short paragraph.
+- One table with KPI, Zone, Score, Matched/Reference, Gaps, Unknown and Status.
+- At most three short observations supported by the numbers. Mention unknown
+  reference definitions or incomplete extraction when they limit interpretation.
+- Explain once: higher means more reference coverage; extras are unpenalized;
+  N/A/not evaluated is not zero. No detailed item lists or overall grade.
+
+results/scores.csv
+Exact header:
+kpi,zone,reference_count,matched_count,gap_count,unknown_count,reference_unknown_count,score_percent,status
+- kpi values: BRR, OLR, ALR, ERC, NKC, GPC.
+- zone values: bronze, silver, gold.
+- status values: complete, provisional, not_evaluated, not_applicable.
+- Order: BRR/bronze, then OLR/ALR/ERC/NKC/GPC for silver, then for gold; omit
+  unselected zones. summary.md and the chat table must use these exact scores.
+- Counts are integers or blank only when unavailable. score_percent is a numeric
+  value with two decimals, or blank for zero denominator/not evaluated/N/A.
+
+results/extraction_notes.md
+- The frozen evidence, input identity, completeness and decision record from
+  section 8. This supports reproduction; it is not a per-KPI detail report.
+
+First user-facing response after running a comparison:
+1. Show the executive overview and KPI table, with the same limits as summary.md.
+2. Link summary.md and scores.csv.
+3. Ask which KPI and zone, if any, the user wants to inspect. Do not generate
+   details merely because a score is low, an item is unknown or a report is offered.
+   If the user already requested a particular detail, honor that request.
+
+Only on an explicit detail request, create:
+results/details/<lowercase-kpi>_<zone>.csv
+Example: results/details/alr_gold.csv
+Exact header:
+status,reference_item,atlas_item,reason,evidence
+- Default rows: gap and unknown items for the requested KPI/zone, plus excluded
+  reference_unknown items when relevant. Include matched rows only if requested.
+  Honor a narrower request such as gaps only. If the KPI is specified without a
+  zone, use its applicable selected zones and state that choice.
+- status values: gap, unknown, reference_unknown, matched.
+- reference_item: readable qualified column pair for BRR, directed table/column
+  dependency for OLR/ALR, or qualified reference entity for ERC/NKC/GPC.
+- atlas_item: verified counterpart, or a clearly marked unresolved candidate;
+  blank when absent/unidentified. Never invent a counterpart to fill the cell.
+- reason: concise supported explanation. For NKC, name missing/unresolved key
+  components; for GPC, state the documented grain difference or missing evidence.
+- evidence: input CSV record references, metadata/code locations and the relevant
+  frozen decision. Qualified display labels are for review; use tuple identities
+  internally. CSV-quote values containing commas, quotes or line breaks.
+- Order rows by status (gap, unknown, reference_unknown, matched), then reference
+  item using the same case-sensitive ordering. No separate file per entity.
+
+Do not create details/ or any detailed KPI outputs before a request. Do not
+create hidden per-item reports as a workaround. Recompute requested details
+from the same frozen CSVs, decisions and rules; do not silently rematch or change
+scores. Verify detail status counts reconcile with scores.csv for all included
+classes. If inputs/decisions changed, stop reuse and explain that a new scored
+run is required. Never fabricate rows to force reconciliation.
+If a score count is blank because it could not be established, explain that
+limitation instead of claiming a numerical reconciliation for that class.

@@ -1,0 +1,258 @@
+Atlas comparison KPI definitions
+Version 0.4 — reference coverage, matching and result interpretation
+
+Purpose
+
+Measure how much of the reference data model the Atlas data model recovers.
+The reference data model is the fixed comparator, not automatically a perfect
+design. Extra Atlas content does not reduce these coverage scores. These are
+separate measures, not one overall grade.
+Calculation and output contract: extraction-prompt.txt, Draft 0.8, sections 8-12.
+This guide explains the measures. The prompt defines exact calculation steps,
+matching prerequisites, result schemas and when detailed reports may be created.
+
+Shared calculation rules
+
+Every percentage is 100 * recovered reference items / applicable reference items.
+Freeze the reference inputs, table scope, selected layers and rules across runs.
+Count each distinct reference item at most once. An Atlas duplicate cannot earn
+additional credit. Different files/queries containing the same link count once.
+Extra Atlas items may be listed for review, but do not change these formulas.
+Do not interpret 100% coverage as proof that all extra Atlas content is correct.
+
+Score direction: higher is better for recovering the reference data model.
+It does not automatically mean a better design. Each KPI answers a specific
+coverage question; none establishes overall correctness or usefulness by itself.
+Lower scores may reflect confirmed gaps, legitimate alternatives, or unknown
+evidence. These need different responses and must remain distinguishable.
+No universal high/low or pass/fail thresholds are defined. Set acceptance criteria
+from business requirements; even a high score may omit a critical requirement.
+
+The extracts retain their own names. Before scoring, review correspondence
+between reference and Atlas entities/columns. Allow a reference entity to be
+represented by an Atlas entity group, or the reverse. Shared names, natural-key
+flags or source tables alone are insufficient to establish equivalence.
+Fix this correspondence before calculating scores; do not optimize it simply
+to maximize coverage. Unresolved correspondence is unknown, not a guessed match.
+
+How different names and layouts are matched
+
+1. Establish common physical sources from complete identity or documented aliases.
+2. Identify intended table concepts/roles using definitions, code and source/key
+   evidence. Accept an explicit crosswalk or a uniquely supported correspondence.
+3. Match intended column properties inside those table representations. Names or
+   common input columns alone do not prove the same business meaning.
+4. For splits/merges, record exact table/column groups and the supported operation
+   connecting the representations. Check dependency and grain preservation separately.
+5. Record evidence and accepted/absent/unresolved decisions before calculating.
+
+The agent may review source evidence; human approval is not required for every
+match. Ambiguous cases remain unresolved. Decisions stay in extraction_notes.md;
+no additional default matching report is created.
+
+Correspondence does not mean correctness. If both columns intend net revenue but
+Atlas reads gross_amount, match the intended columns and let ALR expose the
+different source. Requiring identical lineage would hide that error. Similarly,
+matching tables must not require already-equal key annotations or grain.
+Full matching rules, review requirements and tie handling are in prompt section 8.
+
+BRR — Bronze relationship recall
+
+Question: Of the Bronze column links used by the reference, how many did Atlas
+Analysis identify?
+Inputs: reference/bronze_relationships.csv and atlas/bronze_relationships.csv.
+Reference item: one distinct unordered pair of physical Bronze column endpoints.
+Match: the same pair after resolving any reviewed physical-identifier aliases.
+Formula:
+  BRR = 100 * matched reference Bronze pairs / reference Bronze pairs
+Example: reference has 100 pairs; Atlas has 120, including 80 reference pairs.
+BRR is 80%. The 40 extra pairs do not reduce it. A reversed pair counts once.
+This measures endpoint recovery, not cardinality, FK direction, join type,
+composite-key grouping or correctness of additional inferred relationships.
+Higher means: Atlas Analysis identified more of the reference join-column links.
+Lower means: more reference links are confirmed missing or remain unverified.
+Why it matters: measures discovery of links needed by reference transformations.
+Missing required links can prevent faithful reconstruction. High recall is useful
+for this goal, but says nothing about whether extra Atlas links are appropriate.
+
+OLR — Object-lineage recall
+
+Question: Of the reference source-table contributions to targets, how many appear
+in the corresponding Atlas representation?
+Inputs: both object_mappings.csv files and reviewed endpoint correspondence.
+Reference item: one distinct source-table -> target-table dependency.
+Formula:
+  OLR = 100 * recovered reference table dependencies / reference table dependencies
+Example: 45 recovered dependencies out of 50 gives 90%.
+Calculate separately for Silver and Gold targets. Use the same source/target
+boundary on both sides. Direct Bronze->Silver and Silver->Gold dependencies
+must not be compared with unlabelled end-to-end Bronze->Gold dependencies.
+An approved split/merge may represent one endpoint with a group, but its
+corresponding contribution must be supported; sharing any source is not enough.
+Higher means: more reference source-table contributions are accounted for.
+Lower means: omitted source contributions, alternative processing dependencies,
+or unresolved extraction/alignment evidence.
+Why it matters: locates differences in where target data comes from. A lower
+score needs review; a valid alternative implementation can use different inputs.
+High coverage does not prove correct joins, filters or transformation logic.
+
+ALR — Attribute-lineage recall
+
+Question: Of the reference source-column contributions to target values, how many
+does Atlas preserve in its corresponding attributes?
+Inputs: both attribute_mappings.csv files and reviewed endpoint correspondence.
+Reference item: one distinct source-column -> target-column dependency.
+Formula:
+  ALR = 100 * recovered reference column dependencies / reference column dependencies
+Example: 170 recovered dependencies out of 200 gives 85%.
+Calculate separately for Silver and Gold. Apply the same boundary rules as OLR.
+For price * quantity -> amount, the price and quantity links count separately.
+Partial recovery earns credit only for recovered links. This is a dependency
+score, not proof of the correct expression, filtering or aggregation.
+Source-free constants, generated values and COUNT(*) are not column links and
+do not enter this denominator. Current extracts do not measure full attribute
+content coverage or transformation correctness.
+Higher means: more reference source-column contributions are accounted for.
+Lower means: missing/wrong column dependencies, alternative derivations, or
+unverified mappings.
+Why it matters: highlights fields whose input dependencies need review. A high
+score is useful for lineage recovery, but the same inputs can still be combined
+incorrectly. It does not establish correct values or complete business attributes.
+
+ERC — Entity representation coverage
+
+Question: How many reference business entities have an identified corresponding
+representation in Atlas, allowing different table arrangements?
+Inputs: both entities.csv files plus reviewed semantic correspondence supported
+by the available mappings, metadata and extraction notes.
+Reference item: one reference entity in the selected layer.
+Formula:
+  ERC = 100 * represented reference entities / reference entities
+Example: 18 represented entities out of 20 gives 90%.
+One reference entity matched to several Atlas tables counts once. Several reference
+entities represented by one Atlas table are assessed separately with evidence.
+This counts reviewed representation, not full attribute, grain or result equality.
+An unreviewed candidate match is unknown and earns no verified recovery credit.
+Higher means: more reference business entities have reviewed Atlas representations.
+Lower means: missing business concepts or unresolved correspondence, including
+splits/merges that have not yet been assessed.
+Why it matters: measures represented business scope, not table-name similarity.
+High coverage is desirable when all reference concepts are required, but does not
+establish complete attributes, correct relationships or correct business results.
+
+NKC — Natural-Key Coverage (complete natural-key annotations)
+
+Question: For how many reference entities did Atlas retain every column marked
+as part of the natural/business key?
+Inputs: natural_keys in both entities.csv files plus reviewed column/entity
+correspondence. Source lineage helps match differently named key columns.
+Reference item: a reference entity with a known, nonempty natural-key declaration.
+Match: every reference key column maps to a column marked as a natural key in
+the approved Atlas representation. Each matched reference component must denote
+the same business identifier and source scope. This does not require the entire
+Atlas key declaration to be equivalent; extra components are handled below.
+Formula:
+  NKC = 100 * entities with all reference key annotations recovered
+              / reference entities with known nonempty key declarations
+Example: 12 completely recovered key declarations out of 15 gives 80%.
+A two-column declaration with only one component recovered earns no entity-level
+credit. Extra Atlas key columns do not lower this recall measure; record them as
+key-scope differences for review.
+This measures annotations, not actual uniqueness or equivalent candidate keys.
+The pipe-separated list cannot distinguish alternative key groups. Do not infer
+grouping or key order. Preserve explicit grouping evidence in extraction notes.
+Unknown reference declarations are excluded and counted; known empty declarations
+are not applicable. Unknown Atlas keys remain unresolved for applicable reference
+entities.
+Higher means: more entities retain every reference natural-key annotation.
+Lower means: missing/different annotations, an alternative identity design, or
+unknown key metadata.
+Why it matters: checks agreement on declared business identifiers. A lower score
+can identify incomplete keys, but an alternative valid identity design needs
+separate review. High coverage proves neither uniqueness nor equivalent key scope.
+
+GPC — Grain preservation coverage
+
+Question: For how many reference entities does Atlas preserve the required
+meaning of one row, including its time/history meaning?
+Inputs: grain_description in both entities.csv files, reviewed correspondence
+and the available mapping/metadata evidence.
+Reference item: a reference entity with known grain in the selected layer.
+Formula:
+  GPC = 100 * reference entities with verified preserved grain
+              / reference entities with known grain
+Example: 17 preserved grains out of 20 gives 85%.
+Compare meaning, not identical description text. One sales line and one order
+are different grains. One customer and one historical customer version differ.
+For an approved split/merge, assess the combined representation. A claimed join
+must preserve multiplicity and history; graph connectivity alone is insufficient.
+Current CSVs may not establish this: mark such cases unknown pending supporting
+evidence instead of claiming automatic preservation.
+Known reference grain with a confirmed missing Atlas representation earns no
+credit. Unknown reference grain is excluded and its count reported separately.
+Higher means: more reference row meanings and temporal/history meanings are
+verified as preserved in Atlas.
+Lower means: changed or lost grain, missing entity representations, or insufficient
+evidence to establish preservation.
+Why it matters: required detail and history constrain which business questions
+can be answered. A confirmed violation of required grain is a substantive defect.
+An intentional alternative is not automatically worse, but must be checked against
+the agreed requirements. High coverage does not prove correct measures or values.
+
+Interpretation and incomplete evidence
+
+For each applicable reference item distinguish recovered, confirmed missing or
+not preserved, and unknown. Outside-scope items are not evaluated.
+For a fixed known reference set:
+  denominator = recovered + confirmed missing/not preserved + unknown
+  verified coverage = 100 * recovered / denominator
+Report unknown counts alongside coverage. It is a lower bound while unknowns
+remain, not a claim that every unresolved item is a confirmed defect.
+If required evidence is entirely unavailable or unusable, mark affected KPIs
+not_evaluated rather than reporting zero. Partly incomplete evidence produces
+provisional results. A zero denominator always leaves the percentage blank.
+Use not_applicable only for a complete known reference with no applicable items;
+zero known requirements with unknown reference definitions is provisional.
+If reference extraction is incomplete, results apply only to the extracted
+reference subset and must be labelled provisional; do not imply full coverage.
+
+Silver/Gold direct-relationship recall can later be added as an optional
+structural diagnostic. Different valid layouts can have different direct links.
+An arbitrary multi-hop path is not automatically an equivalent relationship.
+
+Business identity, full information preservation and business-answer correctness
+need more than these recall measures. Natural-key annotations and grain review
+supply evidence, but execution/result equality requires agreed business checks
+and suitable test data. Do not claim those checks have been performed.
+
+Reading the results
+
+Default files in results/:
+- summary.md: short executive overview and KPI table; no item-by-item report.
+- scores.csv: exact counts and percentages behind that overview.
+- extraction_notes.md: inputs, completeness, evidence and frozen review decisions.
+
+reference_count is the denominator. It equals matched_count + gap_count +
+unknown_count. gap_count includes confirmed missing or not-preserved items.
+reference_unknown_count is separate: the reference itself does not define what
+to check. Known-empty natural-key sets are not applicable, not unknown.
+
+Score statuses:
+- complete: the relevant reference and comparison are fully resolved. This can
+  be a low score; complete means the evaluation is complete, not that Atlas passed.
+- provisional: evidence, extraction or alignment is incomplete. A reported
+  percentage measures verified recovery over known reference requirements.
+- not_evaluated: required input is unavailable or unusable; no percentage.
+- not_applicable: no applicable reference requirements; no percentage.
+
+Percentages are rounded to two decimals only for display. Integer counts govern
+claims of complete recovery. There are six rows for one selected target zone and
+eleven for both: one Bronze BRR plus five KPIs for each target zone. No overall
+average, automatic pass/fail threshold or additional default KPIs are calculated.
+
+The agent presents the overview first and asks which KPI/zone needs detail.
+Only when requested, it creates details/<kpi>_<zone>.csv, for example
+details/alr_gold.csv. This contains confirmed gaps and unknowns, reasons and
+evidence for that KPI. Matched items are included only if requested. The details
+must reproduce the same frozen decisions and reconcile with scores.csv; they
+must not silently revise the evaluation or fill missing evidence with guesses.
